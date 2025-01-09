@@ -7,8 +7,6 @@ import numpy as np
 from pathlib import Path
 from typing import Iterable, Union, Any
 
-from utils.examples import get_examples
-
 
 def set_seed(seed: int = 42) -> None:
     np.random.seed(seed)
@@ -48,33 +46,6 @@ def lower_keys(example):
             new_example[key] = value
     return new_example
 
-
-EXAMPLES = get_examples()
-
-
-def load_prompt(data_name, prompt_type, num_shots):
-    if not num_shots:
-        return []
-
-    if data_name in ["gsm_hard", "svamp", "tabmwp", "asdiv", "mawps"]:
-        data_name = "gsm8k"
-    if data_name in ["math_oai", "hungarian_exam", "math-oai", "aime24", "amc23"]:
-        data_name = "math"
-    if data_name in ["sat_math"]:
-        data_name = "mmlu_stem"
-    if data_name in [
-        "gaokao2024_I",
-        "gaokao2024_II",
-        "gaokao_math_qa",
-        "gaokao2024_mix",
-        "cn_middle_school",
-    ]:
-        data_name = "gaokao"
-
-    if prompt_type in ["tool-integrated"]:
-        prompt_type = "tora"
-
-    return EXAMPLES[data_name][:num_shots]
 
 
 PROMPT_TEMPLATES = {

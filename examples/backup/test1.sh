@@ -1,0 +1,157 @@
+set -x
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+BASE_DIR="/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint/test"
+POLICY_MODEL_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/checkpoint-630
+
+TRAINING_ITERS=3
+ROLLOUT_BATCH_SIZE=64
+EPOCH=5
+TRAIN_BATCH_SIZE=64
+LEARNING_RATE=5e-6
+BEST_OF_N=4
+
+checkSuccess() {
+   if [[ $? != 0 ]]; then
+      echo "FAILED $1"
+      exit 1
+   fi
+}
+
+# 在脚本开头添加函数
+clean_gpu_cache() {
+    if python -c "import torch" &>/dev/null; then
+        python -c "import torch; torch.cuda.empty_cache()"
+    fi
+}
+
+rm -rf ${BASE_DIR}/*
+mkdir -p $BASE_DIR
+ITER_LOG_PATH="${BASE_DIR}/iter.log"
+
+# 计算每个epoch的steps数
+NUM_STEPS_PER_EPOCH=$(( (ROLLOUT_BATCH_SIZE + TRAIN_BATCH_SIZE - 1) / TRAIN_BATCH_SIZE ))
+
+REF_MODEL_PATH=$POLICY_MODEL_PATH
+
+iter=0
+if [ -f $ITER_LOG_PATH ]; then
+   iter=$(cat $ITER_LOG_PATH)
+fi
+
+while (($iter < $TRAINING_ITERS)); do
+   echo "Iter: $iter"
+   
+   # Create iteration-specific directories and paths
+   ITER_DIR="$BASE_DIR/iter_${iter}"
+   mkdir -p $ITER_DIR
+   
+   GENERATE_OUTPUT="$ITER_DIR/generate.jsonl"
+   RM_OUTPUT="$ITER_DIR/rm.jsonl"
+   MODEL_OUTPUT_PATH="$ITER_DIR/checkpoint"
+   
+   # Use latest model if past first iteration
+   if ((iter > 0)); then
+      POLICY_MODEL_PATH="$BASE_DIR/iter_$((iter-1))/checkpoint"
+   fi
+
+   read -r -d '' generate_commands <<EOF
+openrlhf.cli.batch_inference0108
+   --eval_task generate_vllm \
+   --pretrain $POLICY_MODEL_PATH \
+   --max_new_tokens 16384 \
+   --prompt_max_len 2048 \
+   --dataset /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/dataset/dpo/aime800.jsonl \
+   --input_key problem \
+   --temperature 0.7 \
+   --tp_size 8 \
+   --best_of_n $BEST_OF_N \
+   --enable_prefix_caching \
+   --max_num_seqs 32 \
+   --iter $iter \
+   --rollout_batch_size $ROLLOUT_BATCH_SIZE \
+   --output_path $GENERATE_OUTPUT.tmp
+EOF
+   echo $generate_commands
+   python -m $generate_commands
+   checkSuccess "GENERATE"
+
+   clean_gpu_cache
+
+   if [ "${PET_NODE_RANK}" = "0" ]; then
+      read -r -d '' eval_commands <<EOF
+openrlhf.cli.math_eval 
+   --input_file $GENERATE_OUTPUT.tmp \
+   --output_file $GENERATE_OUTPUT
+EOF
+      echo $eval_commands
+      python -m $eval_commands
+      checkSuccess "EVAL"
+   else
+      # Wait for node 0 to complete evaluation
+      while [ ! -f "$GENERATE_OUTPUT" ]; do
+         sleep 10
+      done
+   fi
+
+   read -r -d '' get_rewards_commands <<EOF
+openrlhf.cli.batch_inference0108
+   --eval_task rm \
+   --pretrain /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/analysis/download/xuefengli/rm_7b_beta0/qwen.7b.ins_olympaids23k.rs.1223.1pair_ep1.bs256.lr9e-6 \
+   --bf16 \
+   --max_len 16384 \
+   --dataset $GENERATE_OUTPUT  \
+   --dataset_probs 1.0 \
+   --zero_stage 2 \
+   --post_processor iter_dpo \
+   --micro_batch_size 4 \
+   --tp_size 8 \
+   --flash_attn \
+   --output_path $RM_OUTPUT
+EOF
+   echo $get_rewards_commands
+   deepspeed --module $get_rewards_commands
+   checkSuccess "RM"
+
+   clean_gpu_cache
+
+   read -r -d '' dpo_commands <<EOF
+openrlhf.cli.train_dpo \
+   --max_len 16384 \
+   --dataset $RM_OUTPUT \
+   --dataset_probs 1.0 \
+   --prompt_key prompt \
+   --apply_chat_template \
+   --train_batch_size $TRAIN_BATCH_SIZE \
+   --micro_train_batch_size 1 \
+   --pretrain $POLICY_MODEL_PATH \
+   --ref_pretrain $REF_MODEL_PATH \
+   --save_path $MODEL_OUTPUT_PATH \
+   --zero_stage 3 \
+   --max_epochs $EPOCH \
+   --bf16 \
+   --save_steps $NUM_STEPS_PER_EPOCH \
+   --learning_rate $LEARNING_RATE \
+   --adam_offload \
+   --ref_offload \
+   --flash_attn \
+   --packing_samples \
+   --ring_attn_size 1 \
+   --ring_head_stride 1 \
+   --gradient_checkpointing \
+
+EOF
+   echo $dpo_commands
+   deepspeed --module $dpo_commands
+   checkSuccess "DPO"
+
+   clean_gpu_cache
+
+   # Create a symbolic link to the latest checkpoint
+   ln -sf $MODEL_OUTPUT_PATH "$BASE_DIR/latest_checkpoint"
+
+   iter=$((iter + 1))
+   if [[ "$ITER_LOG_PATH" != "null" ]]; then
+      echo $iter >$ITER_LOG_PATH
+   fi
+done

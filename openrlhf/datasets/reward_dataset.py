@@ -18,9 +18,15 @@ def preprocess_data(
 ) -> str:
     if apply_chat_template:
         if prompt_key:
-            prompt = apply_chat_template(data[prompt_key], tokenize=False, add_generation_prompt=True)
-            chosen = apply_chat_template(data[prompt_key] + data[chosen_key], tokenize=False)[len(prompt) :]
-            rejected = apply_chat_template(data[prompt_key] + data[rejected_key], tokenize=False)[len(prompt) :]
+            if is_dpo:
+                prompt = apply_chat_template(data[prompt_key], tokenize=False, add_generation_prompt=True)
+                chosen = apply_chat_template(data[prompt_key] + data[chosen_key], tokenize=False)[len(prompt) :]
+                rejected = apply_chat_template(data[prompt_key] + data[rejected_key], tokenize=False)[len(prompt) :]
+                prompt = "<|im_start|>system\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n" + prompt
+            else:
+                prompt = apply_chat_template(data[prompt_key], tokenize=False, add_generation_prompt=True)
+                chosen = apply_chat_template(data[prompt_key] + data[chosen_key], tokenize=False)[len(prompt) :]
+                rejected = apply_chat_template(data[prompt_key] + data[rejected_key], tokenize=False)[len(prompt) :]
         else:
             prompt = ""
             chosen = apply_chat_template(data[chosen_key], tokenize=False)

@@ -5,7 +5,6 @@ import sympy
 from latex2sympy2 import latex2sympy
 from typing import TypeVar, Iterable, List, Union, Any, Dict
 from word2number import w2n
-from utils import *
 
 
 def _fix_fracs(string):
@@ -496,7 +495,7 @@ def extract_theoremqa_answer(pred: str, answer_flag: bool = True):
     return pred
 
 
-def extract_answer(pred_str, data_name, use_last_number=True):
+def extract_answer(pred_str, use_last_number=True):
     pred_str = pred_str.replace("\u043a\u0438", "")
 
     

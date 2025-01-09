@@ -83,6 +83,13 @@ class RewardModelProxy:
         return {k: v.to(device) for k, v in batch.items()}
 
 
+class RuleBasedRMProxy:
+    def __init__(self, args):
+        with open()
+        
+    def get_reward(self, queries):
+        
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Reward Model
@@ -90,7 +97,8 @@ if __name__ == "__main__":
     parser.add_argument("--normalize_reward", action="store_true", default=False, help="Enable Reward Normazation")
     parser.add_argument("--value_head_prefix", type=str, default="score")
     parser.add_argument("--max_len", type=int, default="2048")
-
+    parser.add_argument("--data_path", type=int, default=)
+    
     parser.add_argument("--port", type=int, default=5000, help="Port number for the server")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="IP for the server")
 
@@ -105,6 +113,8 @@ if __name__ == "__main__":
 
     # server
     reward_model = RewardModelProxy(args)
+    rule_based_rm = RuleBasedRMProxy(args)
+    
     app = FastAPI()
 
     @app.post("/get_reward")

@@ -124,10 +124,152 @@ def iterative_dpo_processor(args, objs):
         for k, v in out.items()
     ]
 
+def iterative_dpo_processor0103(args, objs):
+    out = {}
+    for obj in tqdm(objs, desc="Iterative DPO process...."):
+        problem = obj["problem"]
+        responses = obj["generated_responses"]
+        rewards = obj["rewards_list"]
+        correctness = obj["answers_correctness"]
+        
+        if problem not in out:
+            # 初始化
+            out[problem] = {
+                "output": responses[0],
+                "chosen": None,
+                "chosen_reward": float('-inf'),  # 初始化为负无穷
+                "rejected": None,
+                "rejected_reward": float('inf'),  # 初始化为正无穷
+                "has_correct": False,    # 标记是否有正确答案
+                "has_incorrect": False,   # 标记是否有错误答案
+            }
+        
+        # 遍历所有response、reward和correctness
+        for response, reward, is_correct in zip(responses, rewards, correctness):
+            if is_correct:
+                # 在正确答案中找最高reward的
+                out[problem]["has_correct"] = True
+                if reward > out[problem]["chosen_reward"]:
+                    out[problem]["chosen_reward"] = reward
+                    out[problem]["chosen"] = response
+            else:
+                # 在错误答案中找最低reward的
+                out[problem]["has_incorrect"] = True
+                if reward < out[problem]["rejected_reward"]:
+                    out[problem]["rejected_reward"] = reward
+                    out[problem]["rejected"] = response
+        
+        # 如果没有正确答案，就用最高reward的作为chosen
+        if not out[problem]["has_correct"]:
+            max_reward = max(rewards)
+            max_idx = rewards.index(max_reward)
+            out[problem]["chosen"] = responses[max_idx]
+            out[problem]["chosen_reward"] = max_reward
+            
+        # 如果没有错误答案，就用最低reward的作为rejected
+        if not out[problem]["has_incorrect"]:
+            min_reward = min(rewards)
+            min_idx = rewards.index(min_reward)
+            out[problem]["rejected"] = responses[min_idx]
+            out[problem]["rejected_reward"] = min_reward
+
+    return [
+        {
+            "prompt": k,
+            "chosen": v["chosen"],
+            "chosen_reward": v["chosen_reward"],
+            "rejected": v["rejected"],
+            "rejected_reward": v["rejected_reward"],
+        }
+        for k, v in out.items()
+    ]
+
+def iterative_dpo_processor0104(args, objs, num_pairs=1):
+    """
+    处理 DPO 数据，为每个 problem 选择指定数量的 chosen-rejected pairs
+    
+    Args:
+        args: 参数配置
+        objs: 原始数据对象列表
+        num_pairs: 每个 problem 需要的 pairs 数量，默认为1
+    """
+    out = {}
+    for obj in tqdm(objs, desc="Iterative DPO process...."):
+        problem = obj["problem"]
+        responses = obj["generated_responses"]
+        rewards = obj["rewards_list"]
+        correctness = obj["answers_correctness"]
+        
+        if problem not in out:
+            out[problem] = {
+                "pairs": [],  # 存储多个 pairs
+                "has_correct": False,
+                "has_incorrect": False,
+            }
+        
+        # 将所有回答按照正确与否分类
+        correct_responses = []
+        incorrect_responses = []
+        for response, reward, is_correct in zip(responses, rewards, correctness):
+            if is_correct:
+                out[problem]["has_correct"] = True
+                correct_responses.append((response, reward))
+            else:
+                out[problem]["has_incorrect"] = True
+                incorrect_responses.append((response, reward))
+        
+        # 按照 reward 排序
+        correct_responses.sort(key=lambda x: x[1], reverse=True)  # 降序
+        incorrect_responses.sort(key=lambda x: x[1])  # 升序
+        
+        pairs_added = 0
+        
+        # 如果同时存在正确和错误答案
+        if out[problem]["has_correct"] and out[problem]["has_incorrect"]:
+            # 优先使用正确答案作为 chosen，错误答案作为 rejected
+            for i in range(min(num_pairs, len(correct_responses), len(incorrect_responses))):
+                out[problem]["pairs"].append({
+                    "chosen": correct_responses[i][0],
+                    "chosen_reward": correct_responses[i][1],
+                    "rejected": incorrect_responses[i][0],
+                    "rejected_reward": incorrect_responses[i][1]
+                })
+                pairs_added += 1
+        
+        # 如果还需要更多pairs且还有剩余回答
+        if pairs_added < num_pairs:
+            # 将所有回答按照reward排序
+            all_responses = [(r, rw) for r, rw in zip(responses, rewards)]
+            all_responses.sort(key=lambda x: x[1], reverse=True)
+            
+            # 继续添加pairs直到达到要求数量
+            for i in range(pairs_added, num_pairs):
+                if i + 1 < len(all_responses):  # 确保还有足够的回答可以配对
+                    out[problem]["pairs"].append({
+                        "chosen": all_responses[i][0],
+                        "chosen_reward": all_responses[i][1],
+                        "rejected": all_responses[-i-1][0],  # 从末尾选择
+                        "rejected_reward": all_responses[-i-1][1]
+                    })
+
+    # 转换输出格式
+    result = []
+    for problem, data in out.items():
+        for pair in data["pairs"]:
+            result.append({
+                "prompt": problem,
+                "chosen": pair["chosen"],
+                "chosen_reward": pair["chosen_reward"],
+                "rejected": pair["rejected"],
+                "rejected_reward": pair["rejected_reward"]
+            })
+    
+    return result
+
 PROCESSORS = {
     "rs": rejection_sampling_processor,
     "csft": conditional_sft_processor,
-    "iter_dpo": iterative_dpo_processor,
+    "iter_dpo": iterative_dpo_processor0103,
 }
 
 def get_processor(name):

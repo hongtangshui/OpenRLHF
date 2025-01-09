@@ -8,12 +8,12 @@ checkSuccess() {
    fi
 }
 
-BASE_DIR="/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/iter.dpo.r5.s32.1227"
+BASE_DIR="/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/iter.dpo.r5.s32.0104"
 mkdir -p $BASE_DIR
 ITER_LOG_PATH="${BASE_DIR}/iter.log"
 
-TRAINING_ITERS=2
-ROLLOUT_BATCH_SIZE=16
+TRAINING_ITERS=3
+ROLLOUT_BATCH_SIZE=256
 
 POLICY_MODEL_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/checkpoint-630
 REF_MODEL_PATH=$POLICY_MODEL_PATH
@@ -45,30 +45,37 @@ while (($iter < $TRAINING_ITERS)); do
 #    --pretrain $POLICY_MODEL_PATH \
 #    --max_new_tokens 16384 \
 #    --prompt_max_len 2048 \
-#    --dataset /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/dataset/dpo/aime32.jsonl \
+#    --dataset /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/dataset/dpo/aime800.jsonl \
 #    --input_key problem \
 #    --apply_chat_template \
 #    --temperature 1.0 \
 #    --tp_size 8 \
-#    --best_of_n 32 \
+#    --best_of_n 2 \
 #    --enable_prefix_caching \
 #    --max_num_seqs 1024 \
 #    --iter $iter \
 #    --rollout_batch_size $ROLLOUT_BATCH_SIZE \
-#    --output_file $GENERATE_OUTPUT.tmp
+#    --output_path $GENERATE_OUTPUT.tmp
 # EOF
 #    echo $generate_commands
 #    python -m $generate_commands
 #    checkSuccess "GENERATE"
 
-   read -r -d '' eval_commands <<EOF
-openrlhf.cli.math_eval 
-   --input_file /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/iter.dpo.r5.s32.1227/iter_0/generate.jsonl \
-   --output_file /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/iter.dpo.r5.s32.1227/iter_0/generate_eval.jsonl \
-EOF
-   echo $eval_commands
-   python -m $eval_commands
-   checkSuccess "EVAL"
+#    if [ "${PET_NODE_RANK}" = "0" ]; then
+#       read -r -d '' eval_commands <<EOF
+# openrlhf.cli.math_eval 
+#    --input_file $GENERATE_OUTPUT.tmp \
+#    --output_file $GENERATE_OUTPUT
+# EOF
+#       echo $eval_commands
+#       python -m $eval_commands
+#       checkSuccess "EVAL"
+#    else
+#       # Wait for node 0 to complete evaluation
+#       while [ ! -f "$GENERATE_OUTPUT" ]; do
+#          sleep 10
+#       done
+#    fi
 
 #    read -r -d '' get_rewards_commands <<EOF
 # openrlhf.cli.batch_inference0103
@@ -89,27 +96,33 @@ EOF
 #    deepspeed --module $get_rewards_commands
 #    checkSuccess "RM"
 
-#    read -r -d '' dpo_commands <<EOF
-# openrlhf.cli.train_dpo \
-#    --max_len 16384 \
-#    --dataset $RM_OUTPUT \
-#    --dataset_probs 1.0 \
-#    --prompt_key problem \
-#    --apply_chat_template \
-#    --train_batch_size 128 \
-#    --micro_train_batch_size 2 \
-#    --pretrain $POLICY_MODEL_PATH \
-#    --ref_pretrain $REF_MODEL_PATH \
-#    --save_path $MODEL_OUTPUT_PATH \
-#    --zero_stage 3 \
-#    --max_epochs 3 \
-#    --bf16 \
-#    --learning_rate 5e-6 \
-#    --gradient_checkpointing
-# EOF
-#    echo $dpo_commands
-#    deepspeed --module $dpo_commands
-#    checkSuccess "DPO"
+   read -r -d '' dpo_commands <<EOF
+openrlhf.cli.train_dpo \
+   --max_len 16384 \
+   --dataset $RM_OUTPUT \
+   --dataset_probs 1.0 \
+   --prompt_key prompt \
+   --apply_chat_template \
+   --train_batch_size 128 \
+   --micro_train_batch_size 2 \
+   --pretrain $POLICY_MODEL_PATH \
+   --ref_pretrain $REF_MODEL_PATH \
+   --save_path $MODEL_OUTPUT_PATH \
+   --zero_stage 3 \
+   --max_epochs 3 \
+   --bf16 \
+   --learning_rate 5e-6 \
+   --adam_offload \
+   --ref_offload \
+   --flash_attn \
+   --packing_samples \
+   --ring_attn_size 1 \
+   --ring_head_stride 1 \
+   --gradient_checkpointing
+EOF
+   echo $dpo_commands
+   deepspeed --module $dpo_commands
+   checkSuccess "DPO"
 
    # Create a symbolic link to the latest checkpoint
    ln -sf $MODEL_OUTPUT_PATH "$BASE_DIR/latest_checkpoint"

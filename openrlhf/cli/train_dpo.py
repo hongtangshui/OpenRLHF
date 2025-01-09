@@ -160,8 +160,9 @@ if __name__ == "__main__":
     parser.add_argument("--logging_steps", type=int, default=1)
     parser.add_argument("--eval_steps", type=int, default=-1)
     parser.add_argument("--ckpt_path", type=str, default="./ckpt/checkpoints_dpo")
-    parser.add_argument("--max_ckpt_num", type=int, default=3)
-    parser.add_argument("--max_ckpt_mem", type=int, default=1e8)
+    parser.add_argument("--max_ckpt_num", type=int, default=100)
+    parser.add_argument("--max_ckpt_mem", type=int, default=1e20)
+    parser.add_argument("--iter", type=int, default=0)
 
     # DeepSpeed
     parser.add_argument("--micro_train_batch_size", type=int, default=8, help="batch size per GPU")

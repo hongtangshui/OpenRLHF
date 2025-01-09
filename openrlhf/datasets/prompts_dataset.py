@@ -6,12 +6,17 @@ def preprocess_data(data, input_template=None, input_key="input", apply_chat_tem
     if apply_chat_template:
         chat = data[input_key]
         if isinstance(chat, str):
-            chat = [{"role": "user", "content": chat}]
+            chat = [
+                {"role": "system", "content": "Please reason step by step, and put your final answer within \\boxed{}."},
+                {"role": "user", "content": chat}
+            ]
         prompt = apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
     else:
         prompt = data[input_key]
         if input_template:
-            prompt = input_template.format(prompt)
+            # input_template = "<|im_start|>system\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant"
+            prompt = input_template.format(prompt=prompt)
+            print(prompt)
     return prompt
 
 
