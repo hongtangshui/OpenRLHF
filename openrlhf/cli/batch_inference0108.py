@@ -67,8 +67,8 @@ def run_vllm_instance(rank, args, start_idx, end_idx, gpu_ids):
         trust_remote_code=True,
         seed=args.seed + rank,
         enable_prefix_caching=args.enable_prefix_caching,
-        gpu_memory_utilization=0.90,
-        max_num_batched_tokens=80000,
+        gpu_memory_utilization=0.95,
+        max_num_batched_tokens=100000,
         max_num_seqs=args.max_num_seqs,
         swap_space=32,
     )
@@ -200,7 +200,7 @@ def batch_generate_vllm(args):
 
     # Wait for all nodes to complete
     print(f"Node {node_rank}: Waiting for all nodes to complete...")
-    while True:
+    for i in range(60):
         with open(args.output_path, 'r') as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_SH)
             try:

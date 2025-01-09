@@ -58,7 +58,7 @@ while (($iter < $TRAINING_ITERS)); do
    fi
 
    read -r -d '' generate_commands <<EOF
-openrlhf.cli.batch_inference0108
+openrlhf.cli.batch_inference0109
    --eval_task generate_vllm \
    --pretrain $POLICY_MODEL_PATH \
    --max_new_tokens 16384 \
@@ -69,7 +69,7 @@ openrlhf.cli.batch_inference0108
    --tp_size 8 \
    --best_of_n $BEST_OF_N \
    --enable_prefix_caching \
-   --max_num_seqs 16 \
+   --max_num_seqs 8 \
    --iter $iter \
    --rollout_batch_size $ROLLOUT_BATCH_SIZE \
    --output_path $GENERATE_OUTPUT.tmp
@@ -97,7 +97,7 @@ EOF
    fi
 
    read -r -d '' get_rewards_commands <<EOF
-openrlhf.cli.batch_inference0108
+openrlhf.cli.batch_inference0109
    --eval_task rm \
    --pretrain /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/analysis/download/xuefengli/rm_7b_beta0/qwen.7b.ins_olympaids23k.rs.1223.1pair_ep1.bs256.lr9e-6 \
    --bf16 \

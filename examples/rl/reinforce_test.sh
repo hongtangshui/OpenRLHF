@@ -46,7 +46,7 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --prompt_max_len 1024 \
     --generate_max_len 16384 \
     --advantage_estimator reinforce \
-    --zero_stage 2 \
+    --zero_stage 3 \
     --bf16 \
     --actor_learning_rate 5e-7 \
     --init_kl_coef 0.01 \
@@ -54,6 +54,7 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --input_key context_messages \
     --apply_chat_template \
     --max_samples 100000 \
+    --adam_offload \
     --packing_samples \
     --normalize_reward \
     --flash_attn \

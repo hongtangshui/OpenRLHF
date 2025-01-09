@@ -92,6 +92,7 @@ class RuleBasedRMProxy:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="rule")
     # Reward Model
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
     parser.add_argument("--normalize_reward", action="store_true", default=False, help="Enable Reward Normazation")
@@ -112,9 +113,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # server
-    reward_model = RewardModelProxy(args)
-    rule_based_rm = RuleBasedRMProxy(args)
-    
+    if args.mode == "model":
+        reward_model = RewardModelProxy(args)
+    elif args.mode == "rule":
+        reward_model = RuleBasedRMProxy(args)
     app = FastAPI()
 
     @app.post("/get_reward")
