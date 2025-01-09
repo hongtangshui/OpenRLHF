@@ -55,27 +55,63 @@ def rejection_sampling_processor(args, objs):
 
 # Iterative DPO
 # See https://github.com/RLHFlow/Online-RLHF/blob/main/run_loop.sh
+# def iterative_dpo_processor(args, objs):
+#     out = {}
+#     for obj in tqdm(objs, desc="Iterative DPO process...."):
+#         input = obj["input"]
+#         output = obj["output"]
+#         reward = float(obj["reward"])
+
+#         if input not in out:
+#             out[input] = {
+#                 "output": output,
+#                 "chosen": output,
+#                 "chosen_reward": reward,
+#                 "rejected": output,
+#                 "rejected_reward": reward,
+#             }
+#         elif reward > out[input]["chosen_reward"]:
+#             out[input]["chosen_reward"] = reward
+#             out[input]["chosen"] = output
+#         elif reward < out[input]["rejected_reward"]:
+#             out[input]["rejected_reward"] = reward
+#             out[input]["rejected"] = output
+
+#     return [
+#         {
+#             "prompt": k,
+#             "chosen": v["chosen"],
+#             "chosen_reward": v["chosen_reward"],
+#             "rejected": v["rejected"],
+#             "rejected_reward": v["rejected_reward"],
+#         }
+#         for k, v in out.items()
+#     ]
 def iterative_dpo_processor(args, objs):
     out = {}
     for obj in tqdm(objs, desc="Iterative DPO process...."):
-        input = obj["input"]
-        output = obj["output"]
-        reward = float(obj["reward"])
-
-        if input not in out:
-            out[input] = {
-                "output": output,
-                "chosen": output,
-                "chosen_reward": reward,
-                "rejected": output,
-                "rejected_reward": reward,
+        problem = obj["problem"]
+        responses = obj["generated_responses"]
+        rewards = obj["rewards_list"]
+        
+        if problem not in out:
+            # 初始化，使用第一个response和reward
+            out[problem] = {
+                "output": responses[0],
+                "chosen": responses[0],
+                "chosen_reward": rewards[0],
+                "rejected": responses[0],
+                "rejected_reward": rewards[0],
             }
-        elif reward > out[input]["chosen_reward"]:
-            out[input]["chosen_reward"] = reward
-            out[input]["chosen"] = output
-        elif reward < out[input]["rejected_reward"]:
-            out[input]["rejected_reward"] = reward
-            out[input]["rejected"] = output
+        
+        # 遍历所有response和reward对
+        for response, reward in zip(responses, rewards):
+            if reward > out[problem]["chosen_reward"]:
+                out[problem]["chosen_reward"] = reward
+                out[problem]["chosen"] = response
+            elif reward < out[problem]["rejected_reward"]:
+                out[problem]["rejected_reward"] = reward
+                out[problem]["rejected"] = response
 
     return [
         {
@@ -88,13 +124,11 @@ def iterative_dpo_processor(args, objs):
         for k, v in out.items()
     ]
 
-
 PROCESSORS = {
     "rs": rejection_sampling_processor,
     "csft": conditional_sft_processor,
     "iter_dpo": iterative_dpo_processor,
 }
-
 
 def get_processor(name):
     if name in PROCESSORS:
