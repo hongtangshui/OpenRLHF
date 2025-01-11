@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from openrlhf.models import get_llm_for_sequence_regression
 from openrlhf.utils import get_tokenizer
 from openrlhf.utils.logging_utils import init_logger
+from openrlhf.utils.check.qwen_equal import math_equal
 
 logger = init_logger(__name__)
 
@@ -110,7 +111,7 @@ class RuleBasedRMProxy:
                 pred=""
             else:
                 pred=matches[-1][:-1]
-            if pred==self.prompt2answer[prompt]:
+            if math_equal(self.prompt2answer[prompt], pred):
                 scores.append(1.0)
             else:
                 scores.append(0.0)

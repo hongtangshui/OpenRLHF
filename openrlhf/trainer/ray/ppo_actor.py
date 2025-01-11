@@ -292,7 +292,7 @@ class ActorModelRayActor(BasePPORole):
         )
         # print("eval_data:", self.eval_dataset.__getitem__(0))
         self.eval_dataloader = strategy.setup_dataloader(
-            self.eval_dataset, args.rollout_batch_size // strategy.world_size, True, True
+            self.eval_dataset, args.rollout_batch_size // strategy.world_size, True, shuffle=False
         )
         # for prompts in self.eval_dataloader:
             # print("eval dataloader:", prompts)

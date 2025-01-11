@@ -2,7 +2,7 @@ import os
 import os.path
 import re
 import numpy as np
-from openrlhf.utils.check.math_equal import math_equal
+from openrlhf.utils.check.qwen_equal import math_equal
 import json
 import copy
 from abc import ABC
@@ -531,12 +531,11 @@ class PPOTrainer(ABC):
             answer=self.prompt2answer[prompt.strip()]
             source=self.prompt2source[prompt.strip()]
             if source not in acc: acc[source], cnt[source] = 0, 0
-            if math_equal(pred, answer): acc[source]+=1
+            if math_equal(answer, pred): acc[source]+=1
             cnt[source]+=1
         for source in acc:
             if cnt[source]==0: continue
             acc[source]=acc[source]/cnt[source]
-        print(acc)
         return acc                
     
 
