@@ -533,6 +533,11 @@ class PPOTrainer(ABC):
             if source not in acc: acc[source], cnt[source] = 0, 0
             if math_equal(answer, pred): acc[source]+=1
             cnt[source]+=1
+        # reduce here
+        acc=self.strategy.all_reduce(acc, op="sum")
+        cnt=self.strategy.all_reduce(cnt, op="sum")
+        print(acc)
+        print(cnt)
         for source in acc:
             if cnt[source]==0: continue
             acc[source]=acc[source]/cnt[source]
@@ -549,14 +554,17 @@ class PPOTrainer(ABC):
         response_lengths=[]
         for rand_prompts in eval_dataloader:
             prompts=rand_prompts['prompt']
-            sample_list=self.experience_maker._generate_vllm(prompts, n_samples_per_prompt=1, **self.generate_kwargs)
             
-            response_lengths.extend([sample.response_length.cpu() for sample in sample_list])
-            # TODO: bad split
+            sample_list=self.experience_maker._generate_vllm(prompts, evaluation=True, **self.generate_kwargs)
+            print("sample, prompt:", len(sample_list), len(prompts))
             for sample in sample_list:
-                decoded_sequence=self.tokenizer.batch_decode(sample.sequences.cpu(), skip_special_tokens=False)[0]
-                all_queries.extend(decoded_sequence.split("<|im_end|><|im_start|>system"))
-
+                response_lengths.append(sample.response_length.cpu())
+                decoded_sequence=self.tokenizer.batch_decode(sample.sequences.cpu(), skip_special_tokens=False)
+                all_queries.extend(decoded_sequence)
+    
+        print("output cnt1: ", len(all_queries))
+        print("output_cnt2: ", len(response_lengths))
+        
         acc=self.calculate_acc(all_queries)
         avg_response_lengths=np.mean(response_lengths)
         bar_dict={

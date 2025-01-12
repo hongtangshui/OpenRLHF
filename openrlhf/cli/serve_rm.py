@@ -111,6 +111,9 @@ class RuleBasedRMProxy:
                 pred=""
             else:
                 pred=matches[-1][:-1]
+            if prompt not in self.prompt2answer: 
+                scores.append(0.0)
+                continue
             if math_equal(self.prompt2answer[prompt], pred):
                 scores.append(1.0)
             else:

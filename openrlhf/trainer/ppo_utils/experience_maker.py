@@ -630,7 +630,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         self.actor.train()  # reset model state
         return experience
 
-    def _generate_vllm(self, all_prompts: List[str], n_samples_per_prompt=None, **kwargs) -> List[Samples]:
+    def _generate_vllm(self, all_prompts: List[str], evaluation=False, **kwargs) -> List[Samples]:
         from vllm import SamplingParams
 
         # round-robin load balance
@@ -656,10 +656,10 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         )
 
         # Expand prompt list based on the number of samples per prompt
-        if not n_samples_per_prompt:
+        if not evaluation:
             all_prompts = sum([[prompt] * args.n_samples_per_prompt for prompt in all_prompts], [])
         else:
-            all_prompts = sum([[prompt] * n_samples_per_prompt for prompt in all_prompts], [])
+            all_prompts = sum([[prompt] * 1 for prompt in all_prompts], [])
         all_prompt_token_ids = self.tokenize_fn(all_prompts, self.prompt_max_len, padding=False)["input_ids"]
 
         # Distribute requests to engines and collect responses to outputs
@@ -675,10 +675,11 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         # Retrieve and combine results from all outputs
         all_outputs = sum(ray.get(all_output_refs), [])
 
+        
         samples_list = []
         for i in range(0, len(all_outputs), args.micro_rollout_batch_size):
             outputs = all_outputs[i : i + self.strategy.args.micro_rollout_batch_size]
-            if not self.packing_samples:
+            if not self.packing_samples or evaluation:
                 # NOTE: concat all outputs to following format:
                 #
                 # | [PAD] [PAD] token token token | token token [EOS] [PAD] |
