@@ -1,0 +1,134 @@
+{
+  "os": "Linux-5.4.0-192-generic-x86_64-with-glibc2.35",
+  "python": "CPython 3.10.12",
+  "startedAt": "2025-01-11T02:23:57.441133Z",
+  "args": [
+    "--local_rank=0",
+    "--max_len",
+    "16384",
+    "--dataset",
+    "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint-2501/dpo_qwen.32b.ins_aime800.0111_iter3.rbs288.s32.t1.ep3.bs64.lr5e-6/iter_0/data/rm.jsonl",
+    "--dataset_probs",
+    "1.0",
+    "--prompt_key",
+    "prompt",
+    "--apply_chat_template",
+    "--train_batch_size",
+    "64",
+    "--micro_train_batch_size",
+    "1",
+    "--pretrain",
+    "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/checkpoint-630",
+    "--ref_pretrain",
+    "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/checkpoint-630",
+    "--save_path",
+    "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint-2501/dpo_qwen.32b.ins_aime800.0111_iter3.rbs288.s32.t1.ep3.bs64.lr5e-6/iter_0",
+    "--ckpt_path",
+    "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint-2501/dpo_qwen.32b.ins_aime800.0111_iter3.rbs288.s32.t1.ep3.bs64.lr5e-6/iter_0",
+    "--zero_stage",
+    "3",
+    "--max_epochs",
+    "3",
+    "--bf16",
+    "--save_steps",
+    "5",
+    "--learning_rate",
+    "5e-6",
+    "--adam_offload",
+    "--ref_offload",
+    "--flash_attn",
+    "--packing_samples",
+    "--iter",
+    "0",
+    "--ring_attn_size",
+    "1",
+    "--ring_head_stride",
+    "1",
+    "--gradient_checkpointing",
+    "--use_wandb",
+    "1badc41f0d258400b42ad079d39f9d58376dabf0",
+    "--wandb_project",
+    "Wiles",
+    "--wandb_group",
+    "dpo",
+    "--wandb_run_name",
+    "dpo_qwen.32b.ins_aime800.0111_iter3.rbs288.s32.t1.ep3.bs64.lr5e-6\"_iter\"0"
+  ],
+  "program": "-m openrlhf.cli.train_dpo",
+  "git": {
+    "remote": "https://github.com/hongtangshui/OpenRLHF.git",
+    "commit": "18cbe6b4cc3d1cf3a3a581bb7383ac5c04b05dab"
+  },
+  "root": "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/OpenRLHF/wandb/Wiles/dpo/dpo_qwen.32b.ins_aime800.0111_iter3.rbs288.s32.t1.ep3.bs64.lr5e-6_iter0",
+  "host": "qb-prod-gpu147",
+  "username": "root",
+  "executable": "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/public/env/openrlhf/bin/python",
+  "cpu_count": 96,
+  "cpu_count_logical": 192,
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "gpu_count": 8,
+  "disk": {
+    "/": {
+      "total": "3838880616448",
+      "used": "421268152320"
+    }
+  },
+  "memory": {
+    "total": "2164142391296"
+  },
+  "cpu": {
+    "count": 96,
+    "countLogical": 192
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    },
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    },
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    },
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    },
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    },
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    },
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    },
+    {
+      "name": "NVIDIA H100 80GB HBM3",
+      "memoryTotal": "85520809984",
+      "cudaCores": 16896,
+      "architecture": "Hopper"
+    }
+  ],
+  "cudaVersion": "12.3"
+}

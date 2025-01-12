@@ -1,11 +1,11 @@
 set -x
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
+# export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 TRAINING_ITERS=3
 ROLLOUT_BATCH_SIZE=288
-BEST_OF_N=8
+BEST_OF_N=32
 TOP=1
-EPOCH=5
+EPOCH=3
 TRAIN_BATCH_SIZE=64
 LEARNING_RATE=5e-6
 
@@ -27,7 +27,6 @@ clean_gpu_cache() {
     fi
 }
 
-rm -rf ${BASE_DIR}/*
 mkdir -p $BASE_DIR
 ITER_LOG_PATH="${BASE_DIR}/iter.log"
 
@@ -41,6 +40,11 @@ if [ -f $ITER_LOG_PATH ]; then
    iter=$(cat $ITER_LOG_PATH)
 fi
 
+# Clear BASE_DIR if iter is 0
+if [ "$iter" -eq 0 ] && [ -n "$BASE_DIR" ] && [ "$BASE_DIR" != "/" ]; then
+    rm -rf "${BASE_DIR:?}"/*
+fi
+
 while (($iter < $TRAINING_ITERS)); do
    echo "Iter: $iter"
    
@@ -48,13 +52,13 @@ while (($iter < $TRAINING_ITERS)); do
    ITER_DIR="$BASE_DIR/iter_${iter}"
    mkdir -p $ITER_DIR
    
-   GENERATE_OUTPUT="$ITER_DIR/generate.jsonl"
-   RM_OUTPUT="$ITER_DIR/rm.jsonl"
-   MODEL_OUTPUT_PATH="$ITER_DIR/checkpoint"
+   GENERATE_OUTPUT="$ITER_DIR/data/generate.jsonl"
+   RM_OUTPUT="$ITER_DIR/data/rm.jsonl"
+   MODEL_OUTPUT_PATH="$ITER_DIR"
    
    # Use latest model if past first iteration
    if ((iter > 0)); then
-      POLICY_MODEL_PATH="$BASE_DIR/iter_$((iter-1))/checkpoint"
+      POLICY_MODEL_PATH="$BASE_DIR/iter_$((iter-1))"
    fi
 
    read -r -d '' generate_commands <<EOF
@@ -65,11 +69,10 @@ openrlhf.cli.batch_inference0109
    --prompt_max_len 2048 \
    --dataset /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/dataset/dpo/aime800.jsonl \
    --input_key problem \
-   --temperature 0.8 \
+   --temperature 0.6 \
+   --apply_chat_template \
    --tp_size 8 \
    --best_of_n $BEST_OF_N \
-   --enable_prefix_caching \
-   --max_num_seqs 8 \
    --iter $iter \
    --rollout_batch_size $ROLLOUT_BATCH_SIZE \
    --output_path $GENERATE_OUTPUT.tmp
@@ -129,8 +132,9 @@ openrlhf.cli.train_dpo \
    --pretrain $POLICY_MODEL_PATH \
    --ref_pretrain $REF_MODEL_PATH \
    --save_path $MODEL_OUTPUT_PATH \
+   --ckpt_path $MODEL_OUTPUT_PATH \
    --zero_stage 3 \
-   --max_epochs 5 \
+   --max_epochs $EPOCH \
    --bf16 \
    --save_steps $NUM_STEPS_PER_EPOCH \
    --learning_rate 5e-6 \
@@ -145,7 +149,7 @@ openrlhf.cli.train_dpo \
    --use_wandb 1badc41f0d258400b42ad079d39f9d58376dabf0 \
    --wandb_project Wiles \
    --wandb_group dpo \
-   --wandb_run_name "${TRIAL_NAME}_iter${iter}"
+   --wandb_run_name $TRIAL_NAME"_iter"$iter
 
 
 EOF

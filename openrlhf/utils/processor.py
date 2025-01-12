@@ -52,78 +52,6 @@ def rejection_sampling_processor(args, objs):
 
     return [{"input": k, "output": v["output"], "reward": v["reward"]} for k, v in out.items()]
 
-
-# Iterative DPO
-# See https://github.com/RLHFlow/Online-RLHF/blob/main/run_loop.sh
-# def iterative_dpo_processor(args, objs):
-#     out = {}
-#     for obj in tqdm(objs, desc="Iterative DPO process...."):
-#         input = obj["input"]
-#         output = obj["output"]
-#         reward = float(obj["reward"])
-
-#         if input not in out:
-#             out[input] = {
-#                 "output": output,
-#                 "chosen": output,
-#                 "chosen_reward": reward,
-#                 "rejected": output,
-#                 "rejected_reward": reward,
-#             }
-#         elif reward > out[input]["chosen_reward"]:
-#             out[input]["chosen_reward"] = reward
-#             out[input]["chosen"] = output
-#         elif reward < out[input]["rejected_reward"]:
-#             out[input]["rejected_reward"] = reward
-#             out[input]["rejected"] = output
-
-#     return [
-#         {
-#             "prompt": k,
-#             "chosen": v["chosen"],
-#             "chosen_reward": v["chosen_reward"],
-#             "rejected": v["rejected"],
-#             "rejected_reward": v["rejected_reward"],
-#         }
-#         for k, v in out.items()
-#     ]
-def iterative_dpo_processor(args, objs):
-    out = {}
-    for obj in tqdm(objs, desc="Iterative DPO process...."):
-        problem = obj["problem"]
-        responses = obj["generated_responses"]
-        rewards = obj["rewards_list"]
-        
-        if problem not in out:
-            # 初始化，使用第一个response和reward
-            out[problem] = {
-                "output": responses[0],
-                "chosen": responses[0],
-                "chosen_reward": rewards[0],
-                "rejected": responses[0],
-                "rejected_reward": rewards[0],
-            }
-        
-        # 遍历所有response和reward对
-        for response, reward in zip(responses, rewards):
-            if reward > out[problem]["chosen_reward"]:
-                out[problem]["chosen_reward"] = reward
-                out[problem]["chosen"] = response
-            elif reward < out[problem]["rejected_reward"]:
-                out[problem]["rejected_reward"] = reward
-                out[problem]["rejected"] = response
-
-    return [
-        {
-            "prompt": k,
-            "chosen": v["chosen"],
-            "chosen_reward": v["chosen_reward"],
-            "rejected": v["rejected"],
-            "rejected_reward": v["rejected_reward"],
-        }
-        for k, v in out.items()
-    ]
-
 def iterative_dpo_processor0103(args, objs):
     out = {}
     for obj in tqdm(objs, desc="Iterative DPO process...."):
@@ -184,15 +112,20 @@ def iterative_dpo_processor0103(args, objs):
         for k, v in out.items()
     ]
 
-def iterative_dpo_processor0104(args, objs, num_pairs=1):
+def iterative_dpo_processor(args, objs, num_pairs=1):
     """
     处理 DPO 数据，为每个 problem 选择指定数量的 chosen-rejected pairs
+    要求 chosen 和 rejected 都必须包含 \boxed{}
     
     Args:
         args: 参数配置
         objs: 原始数据对象列表
         num_pairs: 每个 problem 需要的 pairs 数量，默认为1
     """
+    def has_boxed(response):
+        """检查回答是否包含 \boxed{}"""
+        return "\\boxed{" in response and "}" in response[response.index("\\boxed{"):]
+    
     out = {}
     for obj in tqdm(objs, desc="Iterative DPO process...."):
         problem = obj["problem"]
@@ -202,15 +135,17 @@ def iterative_dpo_processor0104(args, objs, num_pairs=1):
         
         if problem not in out:
             out[problem] = {
-                "pairs": [],  # 存储多个 pairs
+                "pairs": [],
                 "has_correct": False,
                 "has_incorrect": False,
             }
         
-        # 将所有回答按照正确与否分类
+        # 将所有包含 \boxed{} 的回答按照正确与否分类
         correct_responses = []
         incorrect_responses = []
         for response, reward, is_correct in zip(responses, rewards, correctness):
+            if not has_boxed(response):  # 跳过不包含 \boxed{} 的回答
+                continue
             if is_correct:
                 out[problem]["has_correct"] = True
                 correct_responses.append((response, reward))
@@ -219,8 +154,8 @@ def iterative_dpo_processor0104(args, objs, num_pairs=1):
                 incorrect_responses.append((response, reward))
         
         # 按照 reward 排序
-        correct_responses.sort(key=lambda x: x[1], reverse=True)  # 降序
-        incorrect_responses.sort(key=lambda x: x[1])  # 升序
+        correct_responses.sort(key=lambda x: x[1], reverse=True)
+        incorrect_responses.sort(key=lambda x: x[1])
         
         pairs_added = 0
         
@@ -238,8 +173,8 @@ def iterative_dpo_processor0104(args, objs, num_pairs=1):
         
         # 如果还需要更多pairs且还有剩余回答
         if pairs_added < num_pairs:
-            # 将所有回答按照reward排序
-            all_responses = [(r, rw) for r, rw in zip(responses, rewards)]
+            # 将所有包含 \boxed{} 的回答按照reward排序
+            all_responses = [(r, rw) for r, rw in zip(responses, rewards) if has_boxed(r)]
             all_responses.sort(key=lambda x: x[1], reverse=True)
             
             # 继续添加pairs直到达到要求数量
@@ -248,7 +183,7 @@ def iterative_dpo_processor0104(args, objs, num_pairs=1):
                     out[problem]["pairs"].append({
                         "chosen": all_responses[i][0],
                         "chosen_reward": all_responses[i][1],
-                        "rejected": all_responses[-i-1][0],  # 从末尾选择
+                        "rejected": all_responses[-i-1][0],
                         "rejected_reward": all_responses[-i-1][1]
                     })
 
@@ -269,7 +204,7 @@ def iterative_dpo_processor0104(args, objs, num_pairs=1):
 PROCESSORS = {
     "rs": rejection_sampling_processor,
     "csft": conditional_sft_processor,
-    "iter_dpo": iterative_dpo_processor0103,
+    "iter_dpo": iterative_dpo_processor,
 }
 
 def get_processor(name):

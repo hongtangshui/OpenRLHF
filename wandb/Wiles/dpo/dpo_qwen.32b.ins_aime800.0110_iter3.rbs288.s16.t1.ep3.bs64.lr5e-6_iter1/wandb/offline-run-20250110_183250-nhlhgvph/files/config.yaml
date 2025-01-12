@@ -1,0 +1,224 @@
+wandb_version: 1
+
+save_path:
+  desc: null
+  value: /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint-2501/dpo_qwen.32b.ins_aime800.0110_iter3.rbs288.s16.t1.ep3.bs64.lr5e-6/iter_1
+save_steps:
+  desc: null
+  value: 5
+logging_steps:
+  desc: null
+  value: 1
+eval_steps:
+  desc: null
+  value: -1
+ckpt_path:
+  desc: null
+  value: /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint-2501/dpo_qwen.32b.ins_aime800.0110_iter3.rbs288.s16.t1.ep3.bs64.lr5e-6/iter_1
+max_ckpt_num:
+  desc: null
+  value: 100
+max_ckpt_mem:
+  desc: null
+  value: 1.0e+20
+iter:
+  desc: null
+  value: 1
+micro_train_batch_size:
+  desc: null
+  value: 1
+train_batch_size:
+  desc: null
+  value: 64
+load_checkpoint:
+  desc: null
+  value: false
+max_norm:
+  desc: null
+  value: 1.0
+gradient_checkpointing:
+  desc: null
+  value: true
+seed:
+  desc: null
+  value: 42
+disable_fast_tokenizer:
+  desc: null
+  value: false
+local_rank:
+  desc: null
+  value: 0
+zero_stage:
+  desc: null
+  value: 3
+bf16:
+  desc: null
+  value: true
+ref_offload:
+  desc: null
+  value: true
+learning_rate:
+  desc: null
+  value: 5.0e-06
+lr_warmup_ratio:
+  desc: null
+  value: 0.03
+zpg:
+  desc: null
+  value: 1
+adam_offload:
+  desc: null
+  value: true
+flash_attn:
+  desc: null
+  value: true
+grad_accum_dtype:
+  desc: null
+  value: null
+overlap_comm:
+  desc: null
+  value: false
+gradient_checkpointing_use_reentrant:
+  desc: null
+  value: false
+max_epochs:
+  desc: null
+  value: 3
+l2:
+  desc: null
+  value: 0.0
+beta:
+  desc: null
+  value: 0.1
+ipo:
+  desc: null
+  value: false
+label_smoothing:
+  desc: null
+  value: 0.0
+aux_loss_coef:
+  desc: null
+  value: 0
+nll_loss_coef:
+  desc: null
+  value: 0
+adam_betas:
+  desc: null
+  value:
+  - 0.9
+  - 0.95
+ring_attn_size:
+  desc: null
+  value: 1
+ring_head_stride:
+  desc: null
+  value: 1
+load_in_4bit:
+  desc: null
+  value: false
+lora_rank:
+  desc: null
+  value: 0
+lora_alpha:
+  desc: null
+  value: 16
+target_modules:
+  desc: null
+  value: all-linear
+lora_dropout:
+  desc: null
+  value: 0
+packing_samples:
+  desc: null
+  value: true
+pretrain:
+  desc: null
+  value: /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint-2501/dpo_qwen.32b.ins_aime800.0110_iter3.rbs288.s16.t1.ep3.bs64.lr5e-6/iter_0
+ref_pretrain:
+  desc: null
+  value: /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/qwen2.5-32b-instruct/ds.distill.v3.2.lr5e-6/checkpoint-630
+dataset:
+  desc: null
+  value: /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/data/openrlhf/chckpoint-2501/dpo_qwen.32b.ins_aime800.0110_iter3.rbs288.s16.t1.ep3.bs64.lr5e-6/iter_1/data/rm.jsonl
+dataset_probs:
+  desc: null
+  value: '1.0'
+train_split:
+  desc: null
+  value: train
+eval_split:
+  desc: null
+  value: test
+prompt_key:
+  desc: null
+  value: prompt
+chosen_key:
+  desc: null
+  value: chosen
+rejected_key:
+  desc: null
+  value: rejected
+input_template:
+  desc: null
+  value: null
+apply_chat_template:
+  desc: null
+  value: true
+max_samples:
+  desc: null
+  value: 100000000.0
+max_len:
+  desc: null
+  value: 16384
+use_wandb:
+  desc: null
+  value: 1badc41f0d258400b42ad079d39f9d58376dabf0
+wandb_org:
+  desc: null
+  value: null
+wandb_group:
+  desc: null
+  value: dpo
+wandb_project:
+  desc: null
+  value: Wiles
+wandb_run_name:
+  desc: null
+  value: dpo_qwen.32b.ins_aime800.0110_iter3.rbs288.s16.t1.ep3.bs64.lr5e-6"_iter"1
+use_tensorboard:
+  desc: null
+  value: null
+_wandb:
+  desc: null
+  value:
+    python_version: 3.10.12
+    cli_version: 0.19.0
+    framework: huggingface
+    huggingface_version: 4.46.3
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1736533970
+    t:
+      1:
+      - 1
+      - 11
+      - 30
+      - 41
+      - 49
+      - 51
+      - 55
+      - 71
+      - 98
+      3:
+      - 4
+      - 13
+      - 16
+      - 23
+      - 42
+      - 55
+      4: 3.10.12
+      5: 0.19.0
+      6: 4.46.3
+      8:
+      - 5
+      13: linux-x86_64

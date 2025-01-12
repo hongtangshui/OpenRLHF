@@ -26,6 +26,7 @@ def get_train_ds_config(
         },
         "sub_group_size": "auto",
         "stage3_max_live_parameters": "auto",
+        "stage3_gather_16bit_weights_on_model_save": True,  # 需要
         "stage3_max_reuse_distance": "auto",
         "stage3_param_persistence_threshold": "auto",
         "stage3_prefetch_bucket_size": "auto",

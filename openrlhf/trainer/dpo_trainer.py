@@ -71,27 +71,43 @@ class DPOTrainer(ABC):
         # wandb/tensorboard setting
         self._wandb = None
         self._tensorboard = None
-        if self.strategy.args.use_wandb and self.strategy.is_rank_0():
+        
+        node_rank = 0
+        if 'PET_NODE_RANK' in os.environ:  # 这是全局 rank
+            node_rank = int(os.environ['PET_NODE_RANK'])
+            
+        if self.strategy.args.use_wandb and self.strategy.is_rank_0() and node_rank == 0:
             import wandb
 
             self._wandb = wandb
             if not wandb.api.api_key:
                 wandb.login(key=strategy.args.use_wandb)
+            # 构建本地路径
+            local_dir = os.path.join(
+                "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/OpenRLHF/wandb",
+                strategy.args.wandb_project,
+                strategy.args.wandb_group,
+                strategy.args.wandb_run_name.replace('"', "")
+            )
+            # 确保目录存在
+            os.makedirs(local_dir, exist_ok=True)
+
             wandb.init(
                 entity=strategy.args.wandb_org,
                 project=strategy.args.wandb_project,
                 group=strategy.args.wandb_group,
-                name=strategy.args.wandb_run_name,
+                name=strategy.args.wandb_run_name.replace('"', ""),
                 config=strategy.args.__dict__,
                 reinit=True,
-                mode=offline,
+                mode="offline",
+                dir=local_dir
             )
 
             wandb.define_metric("train/global_step")
             wandb.define_metric("train/*", step_metric="train/global_step", step_sync=True)
             wandb.define_metric("eval/global_step")
             wandb.define_metric("eval/*", step_metric="eval/global_step", step_sync=True)
-
+            
         # Initialize TensorBoard writer if wandb is not available
         if self.strategy.args.use_tensorboard and self._wandb is None and self.strategy.is_rank_0():
             from torch.utils.tensorboard import SummaryWriter
@@ -234,13 +250,13 @@ class DPOTrainer(ABC):
         # save ckpt
         # TODO: save best model on dev, use loss/perplexity on whole dev dataset as metric
         if global_step % args.save_steps == 0:
-            tag = f"iter.{args.iter}_step.{global_step}"
-            # self.strategy.save_ckpt(
-            #     self.model.model, args.ckpt_path, tag, args.max_ckpt_num, args.max_ckpt_mem, client_states
-            # )
-            self.strategy.save_model(
-                self.model.model, self.tokenizer, os.path.join(args.save_path, tag)
+            tag = f"iter-{args.iter}_checkpoint-{global_step}"
+            self.strategy.save_ckpt(
+                self.model.model, args.ckpt_path, tag, args.max_ckpt_num, args.max_ckpt_mem, client_states
             )
+            # self.strategy.save_model(
+            #     self.model.model, self.tokenizer, os.path.join(args.save_path, tag)
+            # )
 
     def evaluate(self, eval_dataloader, steps=0):
         self.model.eval()

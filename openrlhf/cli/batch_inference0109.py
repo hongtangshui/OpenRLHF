@@ -1,10 +1,14 @@
 import argparse
 import os
+import json
 from datetime import timedelta
 import dataset
 import jsonlines
 import torch
-import torch.multiprocessing as mp
+from tensorrt_llm import LLM, SamplingParams
+import fcntl
+import multiprocessing
+import subprocess
 from torch import distributed as dist
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -12,88 +16,164 @@ import time
 from openrlhf.datasets import PromptDataset, SFTDataset
 from openrlhf.models import Actor, get_llm_for_sequence_regression
 from openrlhf.utils import blending_datasets, get_processor, get_strategy, get_tokenizer
-from tensorrt_llm import LLM, SamplingParams
-import fcntl
-import subprocess
-import multiprocessing
 
-class DummyStrategy:
-    def __init__(self, args):
-        self.args = args
+
+def batch_generate_vllm(args):
+    class Empty:
+        pass
+
+    dummy_strategy = Empty()
+    dummy_strategy.print = print
+    dummy_strategy.is_rank_0 = lambda: True
+    dummy_strategy.args = args
     
-    def print(self, *args, **kwargs):
-        print(*args, **kwargs)
-    
-    def is_rank_0(self):
-        return True
+    # Get node configuration from environment variables
+    node_rank = int(os.environ.get("PET_NODE_RANK", 0))
+    num_nodes = int(os.environ.get("PET_NNODES", 1))
 
-class NodeConfig:
-    def __init__(self, node_rank=0, num_nodes=1):
-        self.rank = int(os.environ.get("PET_NODE_RANK", node_rank))
-        self.total = int(os.environ.get("PET_NNODES", num_nodes))
-        
-    def get_node_range(self, total_samples):
-        samples_per_node = total_samples // self.total
-        remainder = total_samples % self.total
-        start = self.rank * samples_per_node + min(self.rank, remainder)
-        end = start + samples_per_node + (1 if self.rank < remainder else 0)
-        return start, end
+    # Process model paths
+    parts = args.pretrain.split('/')
+    model_name = parts[-3]
+    version = parts[-2]
+    ckpt_name = parts[-1]
 
-class VLLMInstance:
-    def __init__(self, args, gpu_ids, seed_offset=0):
-        self.args = args
-        self.strategy = DummyStrategy(args)
-        self.gpu_ids = gpu_ids
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
-        
-        
-        self.tokenizer = AutoTokenizer.from_pretrained("/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/public/model/Qwen2.5-32B-Instruct")
-        self.llm = LLM(
-            tokenizer=self.tokenizer,
-            model=args.pretrain,
-            tensor_parallel_size=len(gpu_ids),
-            trust_remote_code=True,
-        )
-        self.sampling_params = SamplingParams(
-            max_tokens=args.max_new_tokens,
-            top_p=getattr(args, 'top_p', 1.0),
-            temperature=getattr(args, 'temperature', 1.0),
-            n=args.best_of_n,
-            seed=args.seed + seed_offset,
-        )
+    base_path = os.path.join('/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/trtllm/openrlhf')
+    checkpoint_out = os.path.join(base_path, 'checkpoint', model_name, version, ckpt_name)
+    engine_out = os.path.join(base_path, 'engine', model_name, version, ckpt_name)
 
-    def generate(self, prompts_data, start_idx):
-        prompts_dataset = PromptDataset(
-            prompts_data, 
-            self.tokenizer,
-            self.strategy,
-            input_template=getattr(self.args, 'input_template', None)
-        )
-        prompts = list(prompts_dataset)
+    # Add a done flag file path
+    done_flag = os.path.join(engine_out, '.conversion_done')
+
+    # Convert checkpoint if needed
+    if (not (os.path.exists(engine_out) and os.listdir(engine_out))) or args.iter>0:
+        os.makedirs(checkpoint_out, exist_ok=True)
+        os.makedirs(engine_out, exist_ok=True)
         
-        if getattr(self.args, 'enable_csft', False):
-            prompts = [p + self.args.csft_prompt.strip() + " " for p in prompts]
+        if node_rank == 0:  # Only rank 0 node performs the conversion
+            print(f"### CPU count: {multiprocessing.cpu_count()} ###")
+            # Convert checkpoint
+            convert_cmd = [
+                'python', 'openrlhf/utils/convert_checkpoint.py',
+                '--model_dir', args.pretrain,
+                '--output_dir', checkpoint_out,
+                '--dtype', 'float16',
+                '--tp_size', '8',
+                '--workers', str(max(1, multiprocessing.cpu_count() - 3)),
+                '--load_model_on_cpu'
+            ]
             
-        completions = self.llm.generate(prompts, self.sampling_params)
+            if subprocess.run(convert_cmd).returncode != 0:
+                print("Checkpoint conversion failed")
+                return None
+                
+            # Build engine
+            build_cmd = [
+                'trtllm-build',
+                '--checkpoint_dir', checkpoint_out,
+                '--output_dir', engine_out,
+                '--gemm_plugin', 'auto',
+                '--workers', str(max(1, multiprocessing.cpu_count() - 3))
+            ]
+            
+            if subprocess.run(build_cmd).returncode != 0:
+                print("Engine build failed")
+                return None
+                
+            # Create done flag file after successful conversion
+            with open(done_flag, 'w') as f:
+                f.write('done')
+                
+            print(f"Successfully converted checkpoint: {engine_out}")
         
-        return [
-            {
-                "problem": prompts_data[i]["problem"],
-                "solution": prompts_data[i].get("solution", ""),
-                "generated_responses": [
-                    completions[i].outputs[j].text 
-                    for j in range(len(completions[i].outputs))
-                ],
-                "answer": prompts_data[i].get("answer", ""),
-                "original_index": start_idx + i
-            }
-            for i in range(len(prompts_data))
-        ]
-
-def safe_write_results(file_path, results):
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        else:  # Other nodes wait for conversion to complete
+            while not os.path.exists(done_flag):
+                time.sleep(10)  # Check every 10 seconds
+                
+    args.pretrain = engine_out
     
-    with open(file_path, 'a+') as f:
+    # Initialize tokenizer and model
+    tokenizer = AutoTokenizer.from_pretrained(
+        "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/public/model/Qwen2.5-32B-Instruct"
+    )
+    
+    # Use all available GPUs
+    gpu_ids = list(range(torch.cuda.device_count()))
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_ids))
+    
+    llm = LLM(
+        tokenizer=tokenizer,
+        model=args.pretrain,
+        tensor_parallel_size=len(gpu_ids),
+        trust_remote_code=True,
+    )
+    
+    sampling_params = SamplingParams(
+        max_tokens=args.max_new_tokens,
+        top_p=getattr(args, 'top_p', 1.0),
+        temperature=getattr(args, 'temperature', 0.5),
+        n=args.best_of_n,
+        seed=args.seed
+    )
+    
+    # Load dataset
+    dataset = blending_datasets(
+        args.dataset,
+        getattr(args, 'dataset_probs', None),
+        dummy_strategy, 
+        args.seed,
+        return_eval=False,
+        max_count=getattr(args, 'max_samples', None),
+        train_split=getattr(args, 'dataset_split', None),
+    )
+    
+    # Calculate node's data range
+    total_samples = len(dataset) if args.iter is None else args.rollout_batch_size
+    samples_per_node = total_samples // num_nodes
+    remainder = total_samples % num_nodes
+    start_idx = node_rank * samples_per_node + min(node_rank, remainder)
+    end_idx = start_idx + samples_per_node + (1 if node_rank < remainder else 0)
+    
+    if args.iter is not None:
+        offset = args.iter * args.rollout_batch_size
+        start_idx += offset
+        end_idx += offset
+    
+    # Process data chunk
+    chunk_data = dataset.select(range(start_idx, end_idx))
+    prompts_dataset = PromptDataset(
+        chunk_data,
+        tokenizer,
+        dummy_strategy,  
+        input_template=getattr(args, 'input_template', None)
+    )
+    prompts = list(prompts_dataset)
+    
+    # Add CSFT prompt if enabled
+    if getattr(args, 'enable_csft', False):
+        prompts = [p + args.csft_prompt.strip() + " " for p in prompts]
+    
+    print(prompts)
+    # Generate completions
+    completions = llm.generate(prompts, sampling_params)
+    
+    # Prepare results
+    results = [
+        {
+            "problem": chunk_data[i]["problem"],
+            "solution": chunk_data[i].get("solution", ""),
+            "generated_responses": [
+                completions[i].outputs[j].text 
+                for j in range(len(completions[i].outputs))
+            ],
+            "answer": chunk_data[i].get("answer", ""),
+            "original_index": start_idx + i
+        }
+        for i in range(len(chunk_data))
+    ]
+    
+    # Save results with file locking
+    os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
+    with open(args.output_path, 'a+') as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             f.seek(0)
@@ -109,144 +189,24 @@ def safe_write_results(file_path, results):
                 f.write(json.dumps(item) + '\n')
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-
-def process_data_chunk(rank, args, start_idx, end_idx, gpu_ids):
-    instance = VLLMInstance(args, gpu_ids, seed_offset=rank)
-    strategy = DummyStrategy(args)
     
-    dataset = blending_datasets(
-        args.dataset,
-        getattr(args, 'dataset_probs', None),
-        strategy,
-        args.seed,
-        return_eval=False,
-        max_count=getattr(args, 'max_samples', None),
-        train_split=getattr(args, 'dataset_split', None),
-    )
-    chunk_data = dataset.select(range(start_idx, end_idx))
+    print(f"Completed processing samples {start_idx} to {end_idx}")
     
-    results = instance.generate(chunk_data, start_idx)
-    safe_write_results(args.output_path, results)
-    print(f"Process {rank}: Completed processing samples {start_idx} to {end_idx}")
-
-def batch_generate_vllm(args):
-    node_config = NodeConfig()
-    strategy = DummyStrategy(args)
-    
-    parts = args.pretrain.split('/')
-    model_name = parts[-3]
-    version = parts[-2]
-    ckpt_name = parts[-1]
-    
-    base_path = os.path.join('/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/trtllm')
-    checkpoint_out = os.path.join(base_path, 'checkpoint', model_name, version, ckpt_name)
-    engine_out = os.path.join(base_path, 'engine', model_name, version, ckpt_name)
-    if os.path.exists(engine_out) and os.listdir(engine_out):
-        args.pretrain = engine_out
-    else:
-        os.makedirs(checkpoint_out, exist_ok=True)
-        os.makedirs(engine_out, exist_ok=True)
-
-        cpu_count = max(1, multiprocessing.cpu_count() - 3)
-
-        convert_cmd = [
-            'python', 'openrlhf/utils/convert_checkpoint.py',
-            '--model_dir', args.pretrain,
-            '--output_dir', checkpoint_out,
-            '--dtype', 'float16',
-            '--tp_size', '4',
-            '--workers', str(cpu_count)
-        ]
-        
-        process = subprocess.run(convert_cmd)
-        if process.returncode != 0:
-            print(f"Node Checkpoint conversion failed")
-            return None
-
-        build_cmd = [
-            'trtllm-build',
-            '--checkpoint_dir', checkpoint_out,
-            '--output_dir', engine_out,
-            '--gemm_plugin', 'auto',
-            '--workers', str(cpu_count)
-        ]
-        
-        process = subprocess.run(build_cmd)
-        if process.returncode != 0:
-            print(f"Engine build failed")
-            return None
-        
-        args.pretrain = engine_out
-        
-        print(f"Successfully converted checkpoint: {args.pretrain}")
-    
-    # Initialize or clean output file
-    if os.path.exists(args.output_path) and node_config.rank == node_config.total - 1:
-        os.remove(args.output_path)
-    
-    # Load dataset and calculate ranges
-    dataset = blending_datasets(
-        args.dataset,
-        getattr(args, 'dataset_probs', None),
-        strategy,
-        args.seed,
-        return_eval=False,
-        max_count=getattr(args, 'max_samples', None),
-        train_split=getattr(args, 'dataset_split', None),
-    )
-    
-    total_samples = len(dataset) if args.iter is None else args.rollout_batch_size
-    node_start, node_end = node_config.get_node_range(total_samples)
-    
-    if args.iter is not None:
-        offset = args.iter * args.rollout_batch_size
-        node_start += offset
-        node_end += offset
-    
-    # Configure multi-instance processing
-    num_instances = getattr(args, 'num_instances', 1)
-    total_gpus = torch.cuda.device_count()
-    gpus_per_instance = total_gpus // num_instances
-    
-    if gpus_per_instance == 0:
-        raise ValueError(f"Not enough GPUs ({total_gpus}) for {num_instances} instances")
-    
-    # Start instances
-    processes = []
-    samples_per_instance = (node_end - node_start) // num_instances
-    instance_remainder = (node_end - node_start) % num_instances
-    
-    for i in range(num_instances):
-        start_idx = node_start + i * samples_per_instance + min(i, instance_remainder)
-        end_idx = start_idx + samples_per_instance + (1 if i < instance_remainder else 0)
-        gpu_ids = list(range(i * gpus_per_instance, (i + 1) * gpus_per_instance))
-        
-        p = mp.Process(
-            target=process_data_chunk,
-            args=(i, args, start_idx, end_idx, gpu_ids)
-        )
-        p.start()
-        processes.append(p)
-    
-    for p in processes:
-        p.join()
-        
     # Wait for all nodes to complete
-    if node_config.rank == 0:
-        for _ in range(60):  # Wait up to 10 minutes
-            with open(args.output_path, 'r') as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
-                try:
-                    completed = sum(1 for line in f if line.strip())
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            
-            if completed == total_samples:
-                break
-                
-            time.sleep(10)
-            
-        print("All nodes have completed their work")
+    print(f"Node {node_rank}: Waiting for all nodes to complete...")
+    for i in range(60):
+        with open(args.output_path, 'r') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH)
+            try:
+                completed = sum(1 for line in f if line.strip())
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        
+        if completed == total_samples:
+            break
+        time.sleep(10)
+    
+    print(f"Node {node_rank}: All nodes have completed their work")
         
 
 def batch_generate(args):

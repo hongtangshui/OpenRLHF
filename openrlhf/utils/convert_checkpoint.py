@@ -3,6 +3,8 @@ import os
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import gc
+import logging
 
 from transformers import AutoConfig
 
@@ -13,6 +15,7 @@ from tensorrt_llm.mapping import Mapping
 from tensorrt_llm.models import QWenForCausalLM
 from tensorrt_llm.models.modeling_utils import QuantConfig
 from tensorrt_llm.quantization import QuantAlgo
+
 
 
 def parse_arguments():
@@ -303,12 +306,22 @@ def execute(workers, func, args):
             ) == 0, "Checkpoint conversion failed, please check error log."
 
 
-def main():
+def clean_cache():
+    """清理内存缓存"""
+    try:
+        gc.collect()
+        release_gc()
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as e:
+        logger.warning(f"清理缓存时发生错误: {str(e)}")
+
+def main(max_retries=3):
     print(tensorrt_llm.__version__)
     args = parse_arguments()
 
     if (args.moe_tp_size == -1 and args.moe_ep_size == -1):
-        # moe default to tp-only
         args.moe_tp_size = args.tp_size
         args.moe_ep_size = 1
     elif (args.moe_tp_size == -1):
@@ -318,18 +331,38 @@ def main():
     assert (args.moe_tp_size * args.moe_ep_size == args.tp_size
             ), "moe_tp_size * moe_ep_size must equal to tp_size"
 
-    tik = time.time()
-
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
     assert args.model_dir is not None
-    convert_and_save_hf(args)
-
-    tok = time.time()
-    t = time.strftime('%H:%M:%S', time.gmtime(tok - tik))
-    print(f'Total time of converting checkpoints: {t}')
-
+    
+    retry_count = 0
+    while retry_count < max_retries:
+        try:
+            tik = time.time()
+            convert_and_save_hf(args)
+            tok = time.time()
+            t = time.strftime('%H:%M:%S', time.gmtime(tok - tik))
+            print(f'Total time of converting checkpoints: {t}')
+            break  # 如果成功完成,跳出循环
+            
+        except Exception as e:
+            retry_count += 1
+            error_msg = f"发生错误 (尝试 {retry_count}/{max_retries}): {str(e)}"
+            if retry_count < max_retries:
+                error_msg += "\n正在清理缓存并重试..."
+            logger.error(error_msg)
+            traceback.print_exc()
+            
+            # 清理缓存
+            clean_cache()
+            
+            if retry_count >= max_retries:
+                logger.error(f"达到最大重试次数 ({max_retries}), 程序终止")
+                raise Exception("转换失败,超过最大重试次数") from e
+            
+            # 等待一段时间再重试
+            time.sleep(10)  # 可以根据需要调整等待时间
 
 if __name__ == '__main__':
     main()
