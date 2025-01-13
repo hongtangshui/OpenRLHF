@@ -645,6 +645,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
 
         args = self.strategy.args
 
+        if evaluation: kwargs['temperature']=0.0
         sampling_params = SamplingParams(
             temperature=kwargs.get("temperature", 1.0),
             top_p=kwargs.get("top_p", 1.0),

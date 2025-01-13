@@ -253,6 +253,7 @@ if __name__ == "__main__":
 
     # PPO
     parser.add_argument("--save_path", type=str, default="./ckpt")
+    parser.add_argument("--samples_save_path", type=str, default='./data')
     parser.add_argument("--num_episodes", type=int, default=1)
     parser.add_argument("--rollout_batch_size", type=int, default=1024)
     parser.add_argument("--micro_rollout_batch_size", type=int, default=8)

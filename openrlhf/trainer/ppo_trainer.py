@@ -23,7 +23,7 @@ from .ppo_utils import AdaptiveKLController, Experience, FixedKLController, Naiv
 class PPOTrainer(ABC):
     """
     Trainer for Proximal Policy Optimization (PPO) algorithm.
-
+x
     Args:
         strategy (Strategy): The training strategy to use.
         actor (Actor): The actor model in the PPO algorithm.
@@ -523,6 +523,7 @@ class PPOTrainer(ABC):
     def calculate_acc(self, all_queries):
         acc={}
         cnt={}
+        eval_output=[]
         for query in all_queries:
             # TODO: bat split
             prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
@@ -531,8 +532,11 @@ class PPOTrainer(ABC):
             answer=self.prompt2answer[prompt.strip()]
             source=self.prompt2source[prompt.strip()]
             if source not in acc: acc[source], cnt[source] = 0, 0
-            if math_equal(answer, pred): acc[source]+=1
+            result=math_equal(answer, pred)
+            if result: acc[source]+=1
             cnt[source]+=1
+            
+            eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0], "result": result, "source": source, "answer": answer})
         # reduce here
         acc=self.strategy.all_reduce(acc, op="sum")
         cnt=self.strategy.all_reduce(cnt, op="sum")
@@ -541,7 +545,7 @@ class PPOTrainer(ABC):
         for source in acc:
             if cnt[source]==0: continue
             acc[source]=acc[source]/cnt[source]
-        return acc                
+        return acc, eval_output                
     
 
     def evaluate(self, eval_dataloader, steps):
@@ -556,16 +560,17 @@ class PPOTrainer(ABC):
             prompts=rand_prompts['prompt']
             
             sample_list=self.experience_maker._generate_vllm(prompts, evaluation=True, **self.generate_kwargs)
-            print("sample, prompt:", len(sample_list), len(prompts))
             for sample in sample_list:
                 response_lengths.append(sample.response_length.cpu())
                 decoded_sequence=self.tokenizer.batch_decode(sample.sequences.cpu(), skip_special_tokens=False)
                 all_queries.extend(decoded_sequence)
     
-        print("output cnt1: ", len(all_queries))
-        print("output_cnt2: ", len(response_lengths))
         
-        acc=self.calculate_acc(all_queries)
+        acc, eval_output=self.calculate_acc(all_queries)
+        os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")), exist_ok=True)
+        with open(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
+            json.dump(eval_output, f, indent=4)
+        
         avg_response_lengths=np.mean(response_lengths)
         bar_dict={
             "response_length": avg_response_lengths,
