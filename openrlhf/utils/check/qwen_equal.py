@@ -12,40 +12,23 @@ import multiprocessing
 from math import isclose
 from typing import Union
 from collections import defaultdict
-import pdb
 
 from sympy import simplify, N
 from sympy.parsing.sympy_parser import parse_expr
 from sympy.parsing.latex import parse_latex
-# from latex2sympy2 import latex2sympy
+from latex2sympy2 import latex2sympy
 
-# from .parser import choice_answer_clean, strip_string
-# from parser import choice_answer_clean
+from .parser import choice_answer_clean, strip_string
+# from parser import choice_answer_clean, strip_string
 
-SUBS2=[
-    ("\\pi", "3.1415926"),
-    ("e", "2.71828"),
-]
-def compare_rounded_numbers(str1, str2):
-    # 尝试将字符串转换为浮点数
-    if "." not in str1 or "." not in str2:
-        return False
-    try:
-        num1 = float(str1)
-        num2 = float(str2)
-    except ValueError:
-        return False  # 如果转换失败，返回False
-    # 获取第二个数字的小数位数
-    decimal_places = len(str2.split('.')[1]) if '.' in str2 else 0
+from .math_normalization import check_sympy_equivalence
 
-    # # 将第一个数字四舍五入到第二个数字的小数位数
-    # rounded_num1 = round(num1, decimal_places)
+import signal
+from concurrent.futures import ThreadPoolExecutor
 
-    # # 将第二个数字四舍五入到相同的小数位数
-    # rounded_num2 = round(num2, decimal_places)
+def timeout_handler(signum, frame):
+    raise TimeoutError("Function execution timed out")
 
-    # 比较两个四舍五入后的数字
-    return num1 == num2
 
 def choice_answer_clean(pred: str):
     pred = pred.strip("\n").rstrip(".").rstrip("/").strip(" ").lstrip(":")
@@ -94,18 +77,14 @@ def str_to_pmatrix(input_str):
 
     return ", ".join(pmatrix_list)
 
-def list_equal(list1, list2):
-    list1=list1.split(",")
-    list2=list2.split(",")
-    # print(list1, list2)
-    if len(list1) != len(list2):
-        return False
-    flag=1
-    for t1, t2 in zip(list1, list2):
-        if not math_equal(t1,t2): 
-            flag=0
-            return False
-    if flag==1: return True
+
+single_choice_patterns = [
+    r"^\(A\)", r"^\(B\)", r"^\(C\)", r"^\(D\)", r"^\(E\)",  # (A) (B) (C) (D) (E)
+    r"^A\.", r"^B\.", r"^C\.", r"^D\.", r"^E\.",            # A. B. C. D. E.
+    r"^A\)", r"^B\)", r"^C\)", r"^D\)", r"^E\)",            # A) B) C) D) E)
+    r"^\*\*A\*\*", r"^\*\*B\*\*", r"^\*\*C\*\*", r"^\*\*D\*\*", r"^\*\*E\*\*",  # **A** **B** **C** **D** **E**
+    r"^A:", r"^B:", r"^C:", r"^D:", r"^E:",                 # A: B: C: D: E:
+]
 
 
 def math_equal(
@@ -114,18 +93,19 @@ def math_equal(
     include_percentage: bool = True,
     is_close: bool = True,
     timeout: bool = False,
+    depth: int = 0,
+    max_depth: int = 5
 ) -> bool:
     """
     Exact match of math if and only if:
     1. numerical equal: both can convert to float and are equal
     2. symbolic equal: both can convert to sympy expression and are equal
     """
-    if "\\pi" in prediction or "\\pi" in reference or "e" in prediction or "e" in reference:
-        prediction = prediction.replace("\\pi", "3.1415926").replace("e", "2.71828")
-        reference = reference.replace("\\pi", "3.1415926").replace("e", "2.71828")
-        if math_equal(prediction, reference):
-            return True
-    # print("Judge:", prediction, reference)
+    
+    if depth > max_depth:
+        return False
+
+
     if prediction is None or reference is None:
         return False
     if str(prediction.strip().lower()) == str(reference.strip().lower()):
@@ -135,6 +115,32 @@ def math_equal(
         and choice_answer_clean(prediction) == reference
     ):
         return True
+    
+    for pattern in single_choice_patterns:
+        if regex.match(pattern, prediction):
+            # Remove the pattern from the beginning of the prediction and strip the result
+            prediction_cleaned = regex.sub(pattern, "", prediction, count=1).strip()
+            # Recursively call math_equal to check if the cleaned prediction matches the reference
+            if math_equal(prediction_cleaned, reference, include_percentage, is_close, timeout=timeout, depth=depth+1, max_depth=max_depth):
+                return True
+            
+    if "," in prediction and "," in reference:
+        # 按逗号分割并去除空格
+        pred_parts = [part.strip() for part in prediction.split(",")]
+        ref_parts = [part.strip() for part in reference.split(",")]
+
+        if len(pred_parts) == len(ref_parts):
+            # 对两个列表排序后逐个比较，使用 math_equal 递归判断是否相等
+            pred_parts_sorted = sorted(pred_parts)
+            ref_parts_sorted = sorted(ref_parts)
+            
+            if all(
+                math_equal(pred_parts_sorted[i], ref_parts_sorted[i], include_percentage, is_close, timeout=timeout, depth=depth+1, max_depth=max_depth)
+                for i in range(len(pred_parts_sorted))
+            ):
+                return True
+    
+    
 
     try:  # 1. numerical equal
         if is_digit(prediction) and is_digit(reference):
@@ -161,7 +167,7 @@ def math_equal(
 
     if not prediction and prediction not in [0, False]:
         return False
-    
+
     # 2. symbolic equal
     reference = str(reference).strip()
     prediction = str(prediction).strip()
@@ -183,24 +189,34 @@ def math_equal(
     ):
         pred_str = pred_str.strip("[]()")
         ref_str = ref_str.strip("[]()")
-        if list_equal(pred_str, ref_str): return True
     for s in ["{", "}", "(", ")"]:
         ref_str = ref_str.replace(s, "")
         pred_str = pred_str.replace(s, "")
     if pred_str.lower() == ref_str.lower():
         return True
     
+    
+    ## unordered [a, b] vs. [c, d]
+    # if (
+    # regex.match(r"(\(|\[).+(\)|\])", prediction) is not None
+    # and regex.match(r"(\(|\[).+(\)|\])", reference) is not None
+    # ):
+    #     pred_parts = prediction[1:-1].split(",")
+    #     ref_parts = reference[1:-1].split(",")
 
-    if (
-        prediction.startswith("[")
-        and prediction.endswith("]")
-        and not reference.startswith("(")
-    ) or (
-        prediction.startswith("(")
-        and prediction.endswith(")")
-        and not reference.startswith("[")
-    ):  
-        if list_equal(pred_str[1:-1], ref_str[1:-1]): return True
+    #     if len(pred_parts) == len(ref_parts):
+    #         # 对两个列表的每个元素进行排序后逐个比较，使用 math_equal 递归判断是否相等
+    #         pred_parts_sorted = sorted(pred_parts, key=lambda x: x.strip())
+    #         ref_parts_sorted = sorted(ref_parts, key=lambda x: x.strip())
+            
+    #         if all(
+    #             [
+    #                 math_equal(pred_parts_sorted[i], ref_parts_sorted[i], include_percentage, is_close, timeout=timeout)
+    #                 for i in range(len(pred_parts_sorted))
+    #             ]
+    #         ):
+    #             return True
+    
 
     ## [a, b] vs. [c, d], return a==c and b==d
     if (
@@ -213,7 +229,7 @@ def math_equal(
             if all(
                 [
                     math_equal(
-                        pred_parts[i], ref_parts[i], include_percentage, is_close
+                        pred_parts[i], ref_parts[i], include_percentage, is_close, timeout=timeout, depth=depth+1, max_depth=max_depth
                     )
                     for i in range(len(pred_parts))
                 ]
@@ -263,6 +279,9 @@ def math_equal(
                                 ref_parts[i],
                                 include_percentage,
                                 is_close,
+                                timeout=timeout,
+                                depth=depth+1, 
+                                max_depth=max_depth
                             )
                             for i in range(len(pred_parts))
                         ]
@@ -291,7 +310,7 @@ def math_equal(
         and "=" not in reference
     ):
         if math_equal(
-            prediction.split("=")[1], reference, include_percentage, is_close
+            prediction.split("=")[1], reference, include_percentage, is_close, timeout=timeout, depth=depth+1, max_depth=max_depth
         ):
             return True
     elif (
@@ -300,32 +319,22 @@ def math_equal(
         and "=" not in prediction
     ):
         if math_equal(
-            prediction, reference.split("=")[1], include_percentage, is_close
+            prediction, reference.split("=")[1], include_percentage, is_close, timeout=timeout, depth=depth+1, max_depth=max_depth
         ):
             return True
 
-    # symbolic equal with sympy
     if timeout:
         if call_with_timeout(symbolic_equal_process, prediction, reference):
             return True
+        # try:
+        #     if call_with_timeout(symbolic_equal, prediction, reference, timeout=1):
+        #         return True
+        # except TimeoutError:
+        #     return False
     else:
         if symbolic_equal(prediction, reference):
             return True
-    # symbolic == numeric
-    try:
-        prediction=float(N(parse_latex(prediction)))
-        if abs(prediction-float(reference))<=1e-8: True
-        if compare_rounded_numbers(str(prediction), str(reference)): return True
-        if compare_rounded_numbers(str(reference), str(prediction)): return True
-    except:
-        pass
-    try:
-        reference=float(N(parse_latex(reference)))
-        if abs(prediction-reference)<=1e-8: return True
-        if compare_rounded_numbers(str(prediction), str(reference)): return True
-        if compare_rounded_numbers(str(reference), str(prediction)): return True
-    except:
-        pass
+
     return False
 
 
@@ -340,12 +349,14 @@ def numeric_equal(prediction: float, reference: float):
     #     return isclose(reference, round(prediction), abs_tol=1e-4)
     # else:
     # prediction = round(prediction, len(str(reference).split(".")[-1]))
-    return isclose(reference, prediction, rel_tol=1e-4)
+    
+    # return isclose(reference, prediction, rel_tol=1e-4)
+    return isclose(reference, prediction, abs_tol=1e-4)
 
 
 def symbolic_equal(a, b):
     def _parse(s):
-        for f in [parse_latex, parse_expr]:
+        for f in [parse_latex, parse_expr, latex2sympy]:
             try:
                 return f(s.replace("\\\\", "\\"))
             except:
@@ -404,7 +415,7 @@ def symbolic_equal_process(a, b, output_queue):
     output_queue.put(result)
 
 
-def call_with_timeout(func, *args, timeout=1, **kwargs):
+def call_with_timeout(func, *args, timeout=3, **kwargs):
     output_queue = multiprocessing.Queue()
     process_args = args + (output_queue,)
     process = multiprocessing.Process(target=func, args=process_args, kwargs=kwargs)
@@ -418,50 +429,86 @@ def call_with_timeout(func, *args, timeout=1, **kwargs):
 
     return output_queue.get()
 
+# def call_with_timeout(func, *args, timeout=1, **kwargs):
+#     # Register the signal function handler
+#     signal.signal(signal.SIGALRM, timeout_handler)
+#     # Set the alarm
+#     signal.alarm(timeout)
+
+#     try:
+#         result = func(*args, **kwargs)
+#         signal.alarm(0)  # Disable the alarm if function completes in time
+#         return result
+#     except TimeoutError:
+#         return False
+#     finally:
+#         # Ensure the alarm is disabled
+#         signal.alarm(0)
+
+# def call_with_timeout(func, *args, timeout=1, **kwargs):
+#     with ThreadPoolExecutor(max_workers=1) as executor:
+#         future = executor.submit(func, *args, **kwargs)
+#         try:
+#             result = future.result(timeout=timeout)  # Wait for result with a timeout
+#             return result
+#         except TimeoutError:
+#             return False  # Timeout occurred
+
+
+
+def check_is_correct(pred, gt, timeout=True):
+    return math_equal(strip_string(pred), strip_string(gt), timeout=timeout)
+
+
+def math_equal_simple(pred, gt):
+    pred = strip_string(pred)
+    gt = strip_string(gt)
+    flag = False
+    
+    try:
+        pred_expr = latex2sympy(pred)
+    except:
+        pred_expr = pred
+        flag = True
+        
+    try:  
+        gt_expr = latex2sympy(gt)
+    except:
+        gt_expr = gt
+        flag = True
+        
+    if flag == True:
+        return pred == gt
+    
+    try:
+        if abs(N(pred_expr) - N(gt_expr)) <= 1e-5:
+            return True
+    except:
+        return False
+
+    return False
+    
+
+def check_is_correct_simple(pred, gt, timeout=True):
+    if timeout:
+        return call_with_timeout(math_equal_simple, pred, gt, timeout=1)
+    else:
+        return math_equal_simple(pred, gt)
+
 def _test_math_equal():
-    # print(math_equal("0.0833333333333333", "\\frac{1}{12}"))
-    # print(math_equal("(1,4.5)", "(1,\\frac{9}{2})"))
-    # print(math_equal("\\frac{x}{7}+\\frac{2}{7}", "\\frac{x+2}{7}", timeout=True))
-    # print(math_equal("\\sec^2(y)", "\\tan^2(y)+1", timeout=True))
-    # print(math_equal("\\begin{pmatrix}-\\frac{7}{4}&-2\\\\4&\\frac{1}{4}\\end{pmatrix}", "(\\begin{pmatrix}-\\frac{7}{4}&-2\\\\4&\\frac{1}{4}\\\\\\end{pmatrix})", timeout=True))
 
-    # pred = '\\begin{pmatrix}\\frac{1}{3x^{2/3}}&0&0\\\\0&1&0\\\\-\\sin(x)&0&0\\end{pmatrix}'
-    # gt = '(\\begin{pmatrix}\\frac{1}{3\\sqrt[3]{x}^2}&0&0\\\\0&1&0\\\\-\\sin(x)&0&0\\\\\\end{pmatrix})'
+    # gt = "\\begin{pmatrix} -10 \\\\ 6 \\end{pmatrix}"
+    # pred = "\\begin{pmatrix}-10\\\\6\\end{pmatrix}"
 
-    # pred= '-\\frac{8x^2}{9(x^2-2)^{5/3}}+\\frac{2}{3(x^2-2)^{2/3}}'
-    # gt= '-\\frac{2(x^2+6)}{9(x^2-2)\\sqrt[3]{x^2-2}^2}'
+    # gt = "(6, -\\frac{3}{8})"
+    # pred = "\left( 6, -\\frac{3}{8} \\right)"
 
-    # pred =  '-34x-45y+20z-100=0'
-    # gt = '34x+45y-20z+100=0'
+    # print(math_equal(strip_string(pred), strip_string(gt), timeout=False))
+    
+    s = "(A) 3"
+    print(choice_answer_clean(s))
+    
 
-    # pred = '\\frac{100}{3}'
-    # gt = '33.3'
-
-    # pred = '\\begin{pmatrix}0.290243531202435\\\\0.196008371385084\\\\-0.186381278538813\\end{pmatrix}'
-    # gt = '(\\begin{pmatrix}0.29\\\\0.196\\\\-0.186\\\\\\end{pmatrix})'
-
-    pred="[1,\\frac{1}{4}]"
-    gt="[1.0, 0.25]"
-    # pred = '\\frac{\\sqrt{\\sqrt{11}+\\sqrt{194}}}{2\\sqrt{33}+15}'
-    # gt = '\\frac{\\sqrt{\\sqrt{11}+\\sqrt{194}}}{15+2\\sqrt{33}}'
-
-    # pred = '(+5)(b+2)'
-    # gt = '(a+5)(b+2)'
-
-    # pred = '\\frac{1+\\sqrt{5}}{2}'
-    # gt = '2'
-
-    # pred = '\\frac{34}{16}+\\frac{\\sqrt{1358}}{16}', gt = '4'
-    # pred = '1', gt = '1\\\\sqrt{19}'
-
-    # pred = "(0.6,2.6667]"
-    # gt = "(\\frac{3}{5},\\frac{8}{3}]"
-
-    # gt = "x+2n+1"
-    # pred = "x+1"
-    pred="\\frac{1}{4}"
-    gt="\\frac{1}{4}"
-    print(math_equal(pred, gt, timeout=True))
 
 
 if __name__ == "__main__":
