@@ -109,6 +109,8 @@ class RuleBasedRMProxy:
             matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", query)
             if len(matches)==0:
                 pred=""
+                scores.append(0.0)
+                continue
             else:
                 pred=matches[-1][:-1]
             if prompt not in self.prompt2answer: 
@@ -117,7 +119,7 @@ class RuleBasedRMProxy:
             if math_equal(self.prompt2answer[prompt], pred):
                 scores.append(1.0)
             else:
-                scores.append(0.0)
+                scores.append(0.1)
         return scores
 
 if __name__ == "__main__":
