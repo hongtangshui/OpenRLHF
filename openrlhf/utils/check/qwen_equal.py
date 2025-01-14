@@ -113,7 +113,7 @@ def math_equal(
     reference: Union[float, str],
     include_percentage: bool = True,
     is_close: bool = True,
-    timeout: bool = False,
+    timeout: bool = True,
 ) -> bool:
     """
     Exact match of math if and only if:
