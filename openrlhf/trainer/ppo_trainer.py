@@ -54,6 +54,8 @@ x
         dataloader_pin_memory (bool, defaults to True): If True, pins memory in the data loader.
         remote_rm_url (str, optional): URL for remote reward model API.
         reward_fn (Callable, optional): Custom reward function for computing rewards.
+        save_hf_ckpt (bool): Whether to save huggingface-format model weight.
+        disable_ds_ckpt (bool): Whether not to save deepspeed-format model weight. (Deepspeed model weight is used for training recovery)
         **generate_kwargs: Additional arguments for model generation.
     """
 
@@ -88,6 +90,8 @@ x
         dataloader_pin_memory: bool = True,
         remote_rm_url: str = None,
         reward_fn: Callable[[List[torch.Tensor]], torch.Tensor] = None,
+        save_hf_ckpt: bool = False,
+        disable_ds_ckpt: bool = False,
         **generate_kwargs,
     ) -> None:
         assert (
@@ -97,6 +101,8 @@ x
         super().__init__()
         self.strategy = strategy
         self.args = strategy.args
+        self.save_hf_ckpt = save_hf_ckpt
+        self.disable_ds_ckpt = disable_ds_ckpt
         self.micro_rollout_batch_size = micro_rollout_batch_size
         self.max_epochs = max_epochs
         self.tokenizer = tokenizer
@@ -591,15 +597,20 @@ x
 
 
     def _save_checkpoint(self, args, tag, client_states):
-        self.strategy.save_ckpt(
-            self.actor.model,
-            os.path.join(args.ckpt_path, "_actor"),
-            tag,
-            args.max_ckpt_num,
-            args.max_ckpt_mem,
-            client_states,
-        )
-        if self.critic is not None:
+        if not self.disable_ds_ckpt:
             self.strategy.save_ckpt(
-                self.critic, os.path.join(args.ckpt_path, "_critic"), tag, args.max_ckpt_num, args.max_ckpt_mem
+                self.actor.model,
+                os.path.join(args.ckpt_path, "_actor"),
+                tag,
+                args.max_ckpt_num,
+                args.max_ckpt_mem,
+                client_states,
             )
+            if self.critic is not None:
+                self.strategy.save_ckpt(
+                    self.critic, os.path.join(args.ckpt_path, "_critic"), tag, args.max_ckpt_num, args.max_ckpt_mem
+                )
+
+        if self.save_hf_ckpt:
+            save_path = os.path.join(args.ckpt_path, f"{tag}_hf")
+            self.strategy.save_model(self.actor, self.tokenizer, save_path)
