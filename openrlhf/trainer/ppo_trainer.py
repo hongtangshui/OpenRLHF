@@ -520,11 +520,14 @@ x
         # TODO: Add evaluation mechanism for PPO
         if global_step % args.eval_steps == 0:
             self.evaluate(self.eval_dataloader, global_step)
+            
+        print("=====EVLUATION DONE=====")
         # save ckpt
         # TODO: save best model on dev, use loss/perplexity/others on whole dev dataset as metric
         if global_step % args.save_steps == 0:
             tag = f"global_step{global_step}"
             self._save_checkpoint(args, tag, client_states)
+        print("=====SAVE CHECKPOINT DONE=====")
 
     def calculate_acc(self, all_queries):
         acc={}
@@ -543,9 +546,13 @@ x
             cnt[source]+=1
             
             eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0], "result": result, "source": source, "answer": answer})
+        print(acc)    
+        print(cnt)    
+        print("=====(calculate_acc)count DONE=====")
         # reduce here
         acc=self.strategy.all_reduce(acc, op="sum")
         cnt=self.strategy.all_reduce(cnt, op="sum")
+        print("=====(calculate_acc)reduce DONE=====")
         print(acc)
         print(cnt)
         for source in acc:
@@ -571,11 +578,17 @@ x
                 decoded_sequence=self.tokenizer.batch_decode(sample.sequences.cpu(), skip_special_tokens=False)
                 all_queries.extend(decoded_sequence)
     
+        print("=====load data DONE=====")
         
         acc, eval_output=self.calculate_acc(all_queries)
+        print("=====acc calculate DONE=====")
         os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")), exist_ok=True)
+        print("=====mkdir DONE=====")
+
         with open(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
             json.dump(eval_output, f, indent=4)
+        print(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"))
+        print("=====write save path DONE=====")
         
         avg_response_lengths=np.mean(response_lengths)
         bar_dict={
@@ -585,6 +598,7 @@ x
         
         logs = self.strategy.all_reduce(bar_dict)
         step_bar.set_postfix(logs)
+        print("=====step_bar DONE=====")
         
         if self.strategy.is_rank_0():
             if self._wandb is not None:
@@ -598,6 +612,7 @@ x
 
     def _save_checkpoint(self, args, tag, client_states):
         if not self.disable_ds_ckpt:
+            print("===== navigate to ds checkpoint =====")
             self.strategy.save_ckpt(
                 self.actor.model,
                 os.path.join(args.ckpt_path, "_actor"),
@@ -612,5 +627,6 @@ x
                 )
 
         if self.save_hf_ckpt:
+            print("===== navigate to hf checkpoint =====")
             save_path = os.path.join(args.ckpt_path, f"{tag}_hf")
             self.strategy.save_model(self.actor, self.tokenizer, save_path)

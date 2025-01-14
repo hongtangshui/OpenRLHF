@@ -29,6 +29,7 @@ def get_train_ds_config(
         "stage3_max_reuse_distance": "auto",
         "stage3_param_persistence_threshold": "auto",
         "stage3_prefetch_bucket_size": "auto",
+        "stage3_gather_16bit_weights_on_model_save": True,
         "reduce_bucket_size": "auto",
         # ZeRO++
         "zero_hpz_partition_size": zpg,

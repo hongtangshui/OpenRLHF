@@ -302,7 +302,7 @@ class DeepspeedStrategy(ABC):
 
         # save model weights for ZeRO2/3
         model_to_save = self._unwrap_model(model)
-
+        print("===== (save_model) model_to_save DONE =====")
         # gather parameters
         output_state_dict = {}
         for k, v in model_to_save.named_parameters():
@@ -312,7 +312,7 @@ class DeepspeedStrategy(ABC):
                 vv = v.data.cpu()
                 if self.is_rank_0():
                     output_state_dict[k] = vv
-
+        print("===== (save_model) gather parameters DONE =====")
         if self.is_rank_0():
             state_dict = model_to_save.state_dict()
 
@@ -330,12 +330,15 @@ class DeepspeedStrategy(ABC):
             if getattr(model_to_save.config, "tie_word_embeddings", False) and "lm_head.weight" in state_dict_keys:
                 state_dict_keys.remove("lm_head.weight")
 
+            print("===== (save_model) corner case for tie_word_embeddings DONE =====")
+            
             assert state_dict_keys.issubset(
                 output_state_dict_keys
             ), f"mismatch keys {output_state_dict_keys.symmetric_difference(state_dict_keys)}"
 
             # only save peft weights https://github.com/microsoft/DeepSpeed/issues/4295
             if isinstance(model_to_save, PeftModel):
+                print("===== (save_model) navigate to PeftModel =====")
                 model_to_save.save_pretrained(output_dir, **kwargs)
                 if self.stage == 3:
                     torch.save(
@@ -347,20 +350,25 @@ class DeepspeedStrategy(ABC):
                         os.remove(filename)
             else:
                 # save model
+                print("===== (save_model) navigate to save normal model =====")
                 model_to_save.save_pretrained(output_dir, state_dict=output_state_dict, **kwargs)
 
             # save config
             output_config_file = os.path.join(output_dir, "config.json")
             model_to_save.config.to_json_file(output_config_file)
+            print("===== (save_model) save config DONE =====")
             # save tokenizer
             tokenizer.save_pretrained(output_dir)
-
+            print("===== (save_model) save tokenizer DONE =====")
+            
             # for models not in AutoModel, copy python module files
             train_from_model_path = model_to_save.config._name_or_path
             if os.path.exists(train_from_model_path):
                 for filename in os.listdir(train_from_model_path):
                     if filename.endswith(".py"):
                         shutil.copy(os.path.join(train_from_model_path, filename), os.path.join(output_dir, filename))
+                        
+            print("===== (save_model) DONE =====")
 
     def all_reduce(self, data, op="mean"):
         assert op in ("mean", "max", "sum")
