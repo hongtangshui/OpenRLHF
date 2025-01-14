@@ -3,7 +3,7 @@
 # 14b, longcot
 
 cd /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/OpenRLHF
-. /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/env/reinforce/bin/activate
+. /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/env/openrlhf/bin/activate
 export WANDB_MODE=offline
 export WANDB_DIR=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/mwandb
 
@@ -13,7 +13,7 @@ N_SAMPLES_PER_PROMPT=16
 TEMPERATURE=0.7
 NUM_EPISODES=1
 KL_COEF=0.001
-BS=256
+BS=128
 EP=1
 LR=5e-7
 EVAL_STEPS=1

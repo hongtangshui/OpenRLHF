@@ -8,7 +8,6 @@ from multiprocessing import Pool
 from functools import partial
 from datetime import datetime
 from .qwen_equal import math_equal
-from .extraction import extract
 from .math_normalization import normalize_final_answer
 
 def process_answer_list(answer_list):
