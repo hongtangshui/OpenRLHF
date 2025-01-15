@@ -7,6 +7,7 @@ import json
 import copy
 from abc import ABC
 from typing import Any, Callable, Dict, List, Optional
+from torch import distributed as dist
 
 import torch
 import torch.nn as nn
@@ -18,7 +19,31 @@ from openrlhf.models.utils import masked_mean
 from openrlhf.utils.distributed_sampler import DistributedSampler
 
 from .ppo_utils import AdaptiveKLController, Experience, FixedKLController, NaiveExperienceMaker, NaiveReplayBuffer
+from filelock import FileLock  
 
+def safe_write_json(filename, data, rank):
+    lock_file = filename + '.lock'
+    with FileLock(lock_file):
+        try:
+            # 尝试读取现有文件
+            try:
+                with open(filename, 'r', encoding='utf-8') as f:
+                    all_data = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                all_data = []
+            
+            # 将当前rank的数据添加到列表中
+            all_data.extend(data)
+            
+            # 写入更新后的数据
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(all_data, f, indent=4)
+                
+            print(f"Rank {rank} successfully wrote data")
+            
+        except Exception as e:
+            print(f"Rank {rank} encountered error while writing: {str(e)}")
+            raise
 
 class PPOTrainer(ABC):
     """
@@ -546,15 +571,13 @@ x
             cnt[source]+=1
             
             eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0], "result": result, "source": source, "answer": answer})
-        print(acc)    
-        print(cnt)    
-        print("=====(calculate_acc)count DONE=====")
+               
+        print(f"=====[Rank {dist.get_rank()}] (calculate_acc)count DONE: {acc}; {cnt}=====")
         # reduce here
         acc=self.strategy.all_reduce(acc, op="sum")
         cnt=self.strategy.all_reduce(cnt, op="sum")
-        print("=====(calculate_acc)reduce DONE=====")
-        print(acc)
-        print(cnt)
+        print(f"=====[Rank {dist.get_rank()}] (calculate_acc)reduce DONE: {acc}; {cnt}=====")
+
         for source in acc:
             if cnt[source]==0: continue
             acc[source]=acc[source]/cnt[source]
@@ -578,23 +601,39 @@ x
                 decoded_sequence=self.tokenizer.batch_decode(sample.sequences.cpu(), skip_special_tokens=False)
                 all_queries.extend(decoded_sequence)
     
-        print("=====load data DONE=====")
+        print(f"=====[Rank {dist.get_rank()}]load data DONE, len of all_queries: {len(all_queries)}, len of response_lengths: {len(response_lengths)}=====")
         
         acc, eval_output=self.calculate_acc(all_queries)
-        print("=====acc calculate DONE=====")
+        print(f"=====[Rank {dist.get_rank()}] acc calculate DONE=====")
         os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")), exist_ok=True)
-        print("=====mkdir DONE=====")
+        print(f"=====[Rank {dist.get_rank()}] mkdir DONE=====")
 
-        with open(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
-            json.dump(eval_output, f, indent=4)
-        print(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"))
-        print("=====write save path DONE=====")
+
+        # 在evaluate函数中的写入部分修改为：
+        output_file = os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
+        # 使用barrier确保目录创建完成
+        dist.barrier()
+
+        # 每个rank安全写入数据
+        rank = dist.get_rank()
+        safe_write_json(output_file, eval_output, rank)
+
+        # 最后用barrier确保所有写入完成
+        dist.barrier()
+        
+        # with open(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
+        #     json.dump(eval_output, f, indent=4)
+        file_name_debug = os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")
+        print(f"=====[Rank {dist.get_rank()}] write save path({file_name_debug}) DONE=====")
         
         avg_response_lengths=np.mean(response_lengths)
         bar_dict={
             "response_length": avg_response_lengths,
         }        
         for source in acc: bar_dict[f"acc_{source}"]=acc[source]
+        print(f"=====[Rank {dist.get_rank()}] bar_dict ({bar_dict}) DONE=====")
         
         logs = self.strategy.all_reduce(bar_dict)
         step_bar.set_postfix(logs)

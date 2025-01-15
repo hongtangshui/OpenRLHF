@@ -2,31 +2,33 @@
 
 # 14b, longcot
 
-cd /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/OpenRLHF
+cd /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/OpenRLHF
+git checkout ppo-local-0114
 . /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/env/openrlhf/bin/activate
+export NCCL_CUMEM_ENABLE=0
 export WANDB_MODE=offline
-export WANDB_DIR=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/data
+export WANDB_DIR=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/mwandb
 
 
 ROLLOUT_BS=256
-N_SAMPLES_PER_PROMPT=16
+N_SAMPLES_PER_PROMPT=8
 TEMPERATURE=0.7
 NUM_EPISODES=1
 KL_COEF=0.001
-BS=256
+BS=128
 EP=1
 LR=5e-7
 EVAL_STEPS=1
 
-DATASET_NAME=gair_3k
+DATASET_NAME=am.36k
 
 
-TRIAL_NAME=rl.reinforce_qwen.14b.sftv1_0114_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE}es${NUM_EPISODES}.kl${KL_COEF}_bs${BS}.ep${EP}.lr${LR}
+TRIAL_NAME=rl.reinforce.0115_qwen.14b.sftv1_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE}es${NUM_EPISODES}.kl${KL_COEF}_bs${BS}.ep${EP}.lr${LR}
 
 DATA_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/data/training_data/rl_prompt/$DATASET_NAME
 POLICY_MODEL_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/qwen2.5-14b-instruct/ds.distill.v1.2.lr5e-6/checkpoint-240
 SAVE_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/math/ckpts/qwen2.5-14b-instruct/$TRIAL_NAME
-
+SAMPLES_SAVE_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/data/output/rl/
 
 # start rm
 if [ "$PET_NODE_RANK" -eq 0 ]; then
@@ -55,7 +57,7 @@ sleep 10s
 # start rl
 if [ "$PET_NODE_RANK" -eq 0 ]; then
 RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="http://$MASTER_ADDR:$MASTER_PORT" \
-    --runtime-env-json='{"working_dir": "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/OpenRLHF"}' \
+    --runtime-env-json='{"working_dir": "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/OpenRLHF"}' \
     -- python3 -m openrlhf.cli.train_ppo_ray \
     --ref_num_nodes 1 \
     --ref_num_gpus_per_node 8 \
@@ -79,6 +81,7 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --prompt_max_len 2048 \
     --generate_max_len 14336 \
     --advantage_estimator reinforce \
+    --samples_save_path $SAMPLES_SAVE_PATH \
     --zero_stage 3 \
     --bf16 \
     --actor_learning_rate $LR \
@@ -90,7 +93,10 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --packing_samples \
     --normalize_reward \
     --flash_attn \
-    --vllm_sync_backend gloo \
+    --save_hf_ckpt \
+    --max_ckpt_num 1000 \
+    --max_ckpt_mem 2147483647 \
+    --vllm_sync_backend nccl \
     --gradient_checkpointing \
     --temperature $TEMPERATURE \
     --use_wandb "1badc41f0d258400b42ad079d39f9d58376dabf0" \
