@@ -8,6 +8,7 @@ import copy
 from abc import ABC
 from typing import Any, Callable, Dict, List, Optional
 from torch import distributed as dist
+import time
 
 import torch
 import torch.nn as nn
@@ -552,12 +553,21 @@ x
         if global_step % args.save_steps == 0:
             tag = f"global_step{global_step}"
             self._save_checkpoint(args, tag, client_states)
+        dist.barrier()
+        time.sleep(5)
         print("=====SAVE CHECKPOINT DONE=====")
 
     def calculate_acc(self, all_queries):
-        acc={}
-        cnt={}
-        eval_output=[]
+        # 预定义所有可能的sources
+        SOURCES = ['aime', 'math', 'pad']  # 写死的source列表
+        
+        # 初始化每个rank的acc和cnt字典，确保所有key都存在
+        acc = {source: 0 for source in SOURCES}
+        cnt = {source: 0 for source in SOURCES}
+        eval_output = []
+        
+        print(f"[Rank {dist.get_rank()}] Starting calculate_acc with {len(all_queries)} queries")
+
         for query in all_queries:
             # TODO: bat split
             prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
@@ -565,23 +575,46 @@ x
             pred = "" if len(matches) == 0 else matches[-1][:-1]
             answer=self.prompt2answer[prompt.strip()]
             source=self.prompt2source[prompt.strip()]
-            if source not in acc: acc[source], cnt[source] = 0, 0
-            result=math_equal(answer, pred)
-            if result: acc[source]+=1
-            cnt[source]+=1
+            # if source not in acc: acc[source], cnt[source] = 0, 0
+            # result=math_equal(answer, pred)
+            # if result: acc[source]+=1
+            # cnt[source]+=1
             
-            eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0], "result": result, "source": source, "answer": answer})
+            # eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0], "result": result, "source": source, "answer": answer})
+            
+            # 确保source在预定义列表中
+            if source in SOURCES:
+                result = math_equal(answer, pred)
+                if result:
+                    acc[source] += 1
+                cnt[source] += 1
+                
+                eval_output.append({
+                    "prompt": prompt,
+                    "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0],
+                    "result": result,
+                    "source": source,
+                    "answer": answer
+                })
                
         print(f"=====[Rank {dist.get_rank()}] (calculate_acc)count DONE: {acc}; {cnt}=====")
         # reduce here
+        dist.barrier()
         acc=self.strategy.all_reduce(acc, op="sum")
+        dist.barrier()
         cnt=self.strategy.all_reduce(cnt, op="sum")
+        dist.barrier()
         print(f"=====[Rank {dist.get_rank()}] (calculate_acc)reduce DONE: {acc}; {cnt}=====")
 
-        for source in acc:
-            if cnt[source]==0: continue
-            acc[source]=acc[source]/cnt[source]
-        return acc, eval_output                
+        # 计算最终准确率
+        final_acc = {}
+        for source in SOURCES:
+            if cnt[source] > 0:
+                final_acc[source] = acc[source] / cnt[source]
+            else:
+                final_acc[source] = 0.0
+                
+        return final_acc, eval_output                
     
 
     def evaluate(self, eval_dataloader, steps):
@@ -600,10 +633,12 @@ x
                 response_lengths.append(sample.response_length.cpu())
                 decoded_sequence=self.tokenizer.batch_decode(sample.sequences.cpu(), skip_special_tokens=False)
                 all_queries.extend(decoded_sequence)
-    
+
+        dist.barrier()
         print(f"=====[Rank {dist.get_rank()}]load data DONE, len of all_queries: {len(all_queries)}, len of response_lengths: {len(response_lengths)}=====")
-        
+        dist.barrier()
         acc, eval_output=self.calculate_acc(all_queries)
+        dist.barrier()
         print(f"=====[Rank {dist.get_rank()}] acc calculate DONE=====")
         os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")), exist_ok=True)
         print(f"=====[Rank {dist.get_rank()}] mkdir DONE=====")
@@ -635,9 +670,10 @@ x
         for source in acc: bar_dict[f"acc_{source}"]=acc[source]
         print(f"=====[Rank {dist.get_rank()}] bar_dict ({bar_dict}) DONE=====")
         
+        dist.barrier()
         logs = self.strategy.all_reduce(bar_dict)
         step_bar.set_postfix(logs)
-        print("=====step_bar DONE=====")
+        print(f"=====[Rank {dist.get_rank()}] step_bar DONE=====")
         
         if self.strategy.is_rank_0():
             if self._wandb is not None:
@@ -646,12 +682,14 @@ x
             elif self._tensorboard is not None:
                 for k, v in logs.items():
                     self._tensorboard.add_scalar(f"eval/{k}", v, steps)
+                    
+        dist.barrier()
         
 
 
     def _save_checkpoint(self, args, tag, client_states):
         if not self.disable_ds_ckpt:
-            print("===== navigate to ds checkpoint =====")
+            print(f"=====[Rank {dist.get_rank()}] navigate to ds checkpoint =====")
             self.strategy.save_ckpt(
                 self.actor.model,
                 os.path.join(args.ckpt_path, "_actor"),
@@ -666,6 +704,6 @@ x
                 )
 
         if self.save_hf_ckpt:
-            print("===== navigate to hf checkpoint =====")
+            print(f"=====[Rank {dist.get_rank()}] navigate to hf checkpoint =====")
             save_path = os.path.join(args.ckpt_path, f"{tag}_hf")
             self.strategy.save_model(self.actor, self.tokenizer, save_path)
