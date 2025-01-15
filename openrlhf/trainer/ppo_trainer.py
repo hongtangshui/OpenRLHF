@@ -187,16 +187,14 @@ x
     def get_prompt2answer(self):
         self.prompt2answer={}
         self.prompt2source={}
-        # for rand_prompts in self.eval_dataloader:
-        #     for prompt, answer, source in zip(rand_prompts['prompt'], rand_prompts['answer'], rand_prompts['source']):
-        #         self.prompt2answer[prompt.strip()]=(answer, answer)
-        # with open("./temp/test.json", 'w+', encoding='utf-8') as f:
-        #     json.dump(self.prompt2answer, f)
         with open("/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/data/original_data/test.json", 'r', encoding='utf-8') as f: 
             data=json.load(f)
+        self.sources=[]
         for line in data:
             self.prompt2answer[line['prompt'].strip()]=line['answer']
             self.prompt2source[line['prompt'].strip()]=line['source']
+            self.sources.append(line['source'])
+        self.sources=set(self.sources)
         print("prompt2answer_length:", len(self.prompt2answer))
         
 
@@ -226,7 +224,6 @@ x
         self.prompts_dataloader = prompts_dataloader
         self.pretrain_dataloader = pretrain_dataloader
         self.eval_dataloader = eval_dataloader
-        # prompt2answer
         self.get_prompt2answer()
 
         # Restore step and start_epoch
@@ -520,31 +517,25 @@ x
             tag = f"global_step{global_step}"
             self._save_checkpoint(args, tag, client_states)
 
-    def calculate_acc(self, all_queries):
-        acc={}
-        cnt={}
+    def calculate_acc(self, decoded_sequences):
+        acc={source: 0 for source in self.sources}
+        cnt={source: 0 for source in self.sources}
         eval_output=[]
-        for query in all_queries:
+        for query in decoded_sequences:
             # TODO: bat split
             prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
             matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", query)
             pred = "" if len(matches) == 0 else matches[-1][:-1]
             answer=self.prompt2answer[prompt.strip()]
             source=self.prompt2source[prompt.strip()]
-            if source not in acc: acc[source], cnt[source] = 0, 0
             result=math_equal(answer, pred)
             if result: acc[source]+=1
             cnt[source]+=1
-            
             eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0], "result": result, "source": source, "answer": answer})
-        # reduce here
-        acc=self.strategy.all_reduce(acc, op="sum")
-        cnt=self.strategy.all_reduce(cnt, op="sum")
-        print(acc)
-        print(cnt)
+        
         for source in acc:
-            if cnt[source]==0: continue
-            acc[source]=acc[source]/cnt[source]
+            if cnt[source]==0: acc[source]=0
+            else: acc[source]=acc[source]/cnt[source]
         return acc, eval_output                
     
 
@@ -554,33 +545,34 @@ x
             desc="Eval stage of steps %d" % steps,
             disable=not self.strategy.is_rank_0(),
         )
-        all_queries=[]
+        eval_samples=[]
         response_lengths=[]
         for rand_prompts in eval_dataloader:
             prompts=rand_prompts['prompt']
-            
             sample_list=self.experience_maker._generate_vllm(prompts, evaluation=True, **self.generate_kwargs)
             for sample in sample_list:
                 response_lengths.append(sample.response_length.cpu())
-                decoded_sequence=self.tokenizer.batch_decode(sample.sequences.cpu(), skip_special_tokens=False)
-                all_queries.extend(decoded_sequence)
-    
-        
-        acc, eval_output=self.calculate_acc(all_queries)
-        os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")), exist_ok=True)
-        with open(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
-            json.dump(eval_output, f, indent=4)
+                eval_samples.append(sample.sequences)
+
+        eval_samples=torch.cat(eval_samples, dim=0)
+        eval_samples=self.strategy.all_gather(eval_samples)
+        decoded_sequences=self.tokenizer.batch_decode(eval_samples.cpu(), skip_special_tokens=False)
         
         avg_response_lengths=np.mean(response_lengths)
-        bar_dict={
-            "response_length": avg_response_lengths,
-        }        
-        for source in acc: bar_dict[f"acc_{source}"]=acc[source]
-        
-        logs = self.strategy.all_reduce(bar_dict)
-        step_bar.set_postfix(logs)
+        logs={"response_length": avg_response_lengths,}   
+        logs=self.strategy.all_reduce(logs)
         
         if self.strategy.is_rank_0():
+            # calc acc on rank_0
+            print("num sequence:", len(decoded_sequences))
+            acc, eval_output=self.calculate_acc(decoded_sequences)
+            os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")), exist_ok=True)
+            with open(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
+                json.dump(eval_output, f, indent=4)
+            for source in acc: logs[f"acc_{source}"]=acc[source]
+        
+            step_bar.set_postfix(logs)
+        
             if self._wandb is not None:
                 logs = {"eval/%s" % k: v for k, v in {**logs, "global_step": steps}.items()}
                 self._wandb.log(logs)

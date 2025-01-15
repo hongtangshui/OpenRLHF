@@ -687,7 +687,10 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
                 # | token token token token token | token token [EOS] [PAD] |
                 # | [PAD] [PAD] [PAD] token token | token token token [EOS] |
                 # |<---------- prompt ----------->|<-------- answer ------->|
-                max_input_len, max_output_len = 0, 0
+                if evaluation:
+                    max_input_len, max_output_len = args.prompt_max_len+128, args.prompt_max_len+args.generate_max_len
+                else:
+                    max_input_len, max_output_len = 0, 0
                 for output in outputs:
                     max_input_len = max(max_input_len, len(output.prompt_token_ids))
                     max_output_len = max(max_output_len, len(output.outputs[0].token_ids))
