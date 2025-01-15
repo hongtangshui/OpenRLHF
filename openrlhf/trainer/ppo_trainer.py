@@ -558,10 +558,8 @@ x
         print("=====SAVE CHECKPOINT DONE=====")
 
     def calculate_acc(self, all_queries):
-        # 预定义所有可能的sources
-        SOURCES = ['aime', 'math', 'pad']  # 写死的source列表
+        SOURCES = ['aime', 'math', 'pad']  #
         
-        # 初始化每个rank的acc和cnt字典，确保所有key都存在
         acc = {source: 0 for source in SOURCES}
         cnt = {source: 0 for source in SOURCES}
         eval_output = []
