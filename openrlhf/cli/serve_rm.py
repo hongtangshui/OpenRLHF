@@ -105,7 +105,6 @@ class RuleBasedRMProxy:
         scores=[]
         for query in quires:
             prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
-            # print(prompt)
             matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", query)
             if len(matches)==0:
                 scores.append(0.0)
@@ -115,7 +114,7 @@ class RuleBasedRMProxy:
             if prompt not in self.prompt2answer: 
                 scores.append(0.0)
                 continue
-            if math_equal(self.prompt2answer[prompt], pred):
+            if self.prompt2answer[prompt].strip()==pred.strip():
                 scores.append(1.0)
             else:
                 scores.append(0.1)
