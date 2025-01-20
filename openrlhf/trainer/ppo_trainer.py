@@ -531,7 +531,7 @@ x
             result=math_equal(answer, pred)
             if result: acc[source]+=1
             cnt[source]+=1
-            eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0], "result": result, "source": source, "answer": answer})
+            eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0], "result": result, "source": source, "answer": answer})
         
         for source in acc:
             if cnt[source]==0: acc[source]=0

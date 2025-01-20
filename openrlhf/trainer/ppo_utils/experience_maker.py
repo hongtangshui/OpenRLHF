@@ -645,7 +645,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
 
         args = self.strategy.args
 
-        if evaluation: kwargs['temperature']=0.0
+        if evaluation: kwargs['temperature']=0.7
         sampling_params = SamplingParams(
             temperature=kwargs.get("temperature", 1.0),
             top_p=kwargs.get("top_p", 1.0),
@@ -653,6 +653,8 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             max_tokens=kwargs.get("max_new_tokens", 1024),
             min_tokens=kwargs.get("min_new_tokens", 1),
             skip_special_tokens=kwargs.get("skip_special_tokens", False),
+            # stop=["<|endoftext|>", "<|end", "text|>", "endoftext", "<|im_end|>"],
+            # stop_token_ids=[151643],
             include_stop_str_in_output=True,
         )
 
