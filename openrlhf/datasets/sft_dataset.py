@@ -14,7 +14,9 @@ def preprocess_data(data, input_template=None, input_key="input", output_key=Non
             response_message = data[output_key]
 
             if isinstance(prompt_message, str) and isinstance(response_message, str):
-                prompt_message = [{"role": "user", "content": prompt_message}]
+                prompt_message = [
+                    {"role": "system", "content": "Please reason step by step, and put your final answer within \\boxed{}."},
+                    {"role": "user", "content": prompt_message}]
                 response_message = [{"role": "assistant", "content": response_message}]
 
             prompt = apply_chat_template(prompt_message, tokenize=False, add_generation_prompt=True)
@@ -81,6 +83,8 @@ class SFTDataset(Dataset):
         self.prompts = processed_dataset["prompt"]
         self.responses = processed_dataset["response"]
         self.prompt_ids_lens = processed_dataset["prompt_ids_len"]
+        print("prompts: ", self.prompts[-1])
+        print("responses: ", self.responses[-1])
 
     def process_data(self, data):
         prompt, response = preprocess_data(
