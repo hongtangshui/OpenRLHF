@@ -1,6 +1,8 @@
 import argparse
 import re
-
+import json
+import jsonlines
+from datasets import load_from_disk
 import torch
 import uvicorn
 from fastapi import FastAPI, Request
@@ -9,6 +11,7 @@ from fastapi.responses import JSONResponse
 from openrlhf.models import get_llm_for_sequence_regression
 from openrlhf.utils import get_tokenizer
 from openrlhf.utils.logging_utils import init_logger
+from openrlhf.utils.check.qwen_equal import math_equal
 
 logger = init_logger(__name__)
 
@@ -25,6 +28,8 @@ def strip_sequence(text, pad_token, eos_token):
     return text
 
 
+                
+                
 class RewardModelProxy:
     def __init__(self, args):
         self.reward_model = get_llm_for_sequence_regression(
@@ -83,9 +88,43 @@ class RewardModelProxy:
         return {k: v.to(device) for k, v in batch.items()}
 
 
+class RuleBasedRMProxy:
+    def __init__(self, args):
+        self.prompt2answer={}
+        
+        dataset = load_from_disk(args.data_path)
+        train_list = list(dataset["train"])
+        validation_list = list(dataset["test"])
+        
+        for line in train_list:
+            self.prompt2answer[line['context'].strip()]=line['answer']
+        for line in validation_list:
+            self.prompt2answer[line['context'].strip()]=line['answer']
+            
+    def get_reward(self, quires):
+        scores=[]
+        for query in quires:
+            prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
+            matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", query)
+            if len(matches)==0:
+                scores.append(0.0)
+                continue
+            else:
+                pred=matches[-1][:-1]
+            if prompt not in self.prompt2answer: 
+                scores.append(0.0)
+                continue
+            if self.prompt2answer[prompt].strip()==pred.strip():
+                scores.append(1.0)
+            else:
+                scores.append(0.1)
+        return scores
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, default="rule")
     # Reward Model
+    parser.add_argument("--data_path", type=str, default=None)    # for 
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
     parser.add_argument("--normalize_reward", action="store_true", default=False, help="Enable Reward Normazation")
     parser.add_argument("--value_head_prefix", type=str, default="score")
@@ -104,11 +143,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # server
-    reward_model = RewardModelProxy(args)
+    if args.mode=="model":
+        reward_model = RewardModelProxy(args)
+    else:
+        reward_model = RuleBasedRMProxy(args)
     app = FastAPI()
 
     @app.post("/get_reward")
     async def get_reward(request: Request):
+        client_host = request.client.host
+        logger.info(f"client_ip: {client_host}")
         data = await request.json()
         queries = data.get("query")
         rewards = reward_model.get_reward(queries)

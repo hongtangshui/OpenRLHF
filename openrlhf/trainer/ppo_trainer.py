@@ -1,5 +1,10 @@
 import os
 import os.path
+import re
+import numpy as np
+from openrlhf.utils.check.qwen_equal import math_equal
+import json
+import copy
 from abc import ABC
 from typing import Any, Callable, Dict, List, Optional
 
@@ -8,7 +13,6 @@ import torch.nn as nn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
 from openrlhf.models import Actor, GPTLMLoss, PolicyLoss, ValueLoss
 from openrlhf.models.utils import masked_mean
 from openrlhf.utils.distributed_sampler import DistributedSampler
@@ -19,7 +23,7 @@ from .ppo_utils import AdaptiveKLController, Experience, FixedKLController, Naiv
 class PPOTrainer(ABC):
     """
     Trainer for Proximal Policy Optimization (PPO) algorithm.
-
+x
     Args:
         strategy (Strategy): The training strategy to use.
         actor (Actor): The actor model in the PPO algorithm.
@@ -186,10 +190,25 @@ class PPOTrainer(ABC):
             log_dir = os.path.join(self.strategy.args.use_tensorboard, strategy.args.wandb_run_name)
             self._tensorboard = SummaryWriter(log_dir=log_dir)
 
+    def get_prompt2answer(self):
+        self.prompt2answer={}
+        self.prompt2source={}
+        with open("/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/data/original_data/test.json", 'r', encoding='utf-8') as f: 
+            data=json.load(f)
+        self.sources=[]
+        for line in data:
+            self.prompt2answer[line['prompt'].strip()]=line['answer']
+            self.prompt2source[line['prompt'].strip()]=line['source']
+            self.sources.append(line['source'])
+        self.sources=set(self.sources)
+        print("prompt2answer_length:", len(self.prompt2answer))
+        
+
     def fit(
         self,
         args,
         prompts_dataloader,
+        eval_dataloader,
         pretrain_dataloader,
         consumed_samples=0,
         num_update_steps_per_episodes=1,
@@ -210,6 +229,8 @@ class PPOTrainer(ABC):
 
         self.prompts_dataloader = prompts_dataloader
         self.pretrain_dataloader = pretrain_dataloader
+        self.eval_dataloader = eval_dataloader
+        self.get_prompt2answer()
 
         # Restore step and start_epoch
         steps = consumed_samples // args.rollout_batch_size + 1
@@ -495,13 +516,77 @@ class PPOTrainer(ABC):
 
         # TODO: Add evaluation mechanism for PPO
         if global_step % args.eval_steps == 0:
-            # self.evaluate(self.eval_dataloader, global_step)
-            pass
+            self.evaluate(self.eval_dataloader, global_step)
         # save ckpt
         # TODO: save best model on dev, use loss/perplexity/others on whole dev dataset as metric
         if global_step % args.save_steps == 0:
             tag = f"global_step{global_step}"
             self._save_checkpoint(args, tag, client_states)
+
+    def calculate_acc(self, decoded_sequences):
+        acc={source: 0 for source in self.sources}
+        cnt={source: 0 for source in self.sources}
+        eval_output=[]
+        for query in decoded_sequences:
+            # TODO: bat split
+            prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
+            matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", query)
+            pred = "" if len(matches) == 0 else matches[-1][:-1]
+            answer=self.prompt2answer[prompt.strip()]
+            source=self.prompt2source[prompt.strip()]
+            result=math_equal(answer, pred)
+            if result: acc[source]+=1
+            cnt[source]+=1
+            eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0], "result": result, "source": source, "answer": answer})
+        
+        for source in acc:
+            if cnt[source]==0: acc[source]=0
+            else: acc[source]=acc[source]/cnt[source]
+        return acc, eval_output                
+    
+
+    def evaluate(self, eval_dataloader, steps):
+        step_bar = tqdm(
+            range(eval_dataloader.__len__()),
+            desc="Eval stage of steps %d" % steps,
+            disable=not self.strategy.is_rank_0(),
+        )
+        eval_samples=[]
+        response_lengths=[]
+        for rand_prompts in eval_dataloader:
+            prompts=rand_prompts['prompt']
+            sample_list=self.experience_maker._generate_vllm(prompts, evaluation=True, **self.generate_kwargs)
+            for sample in sample_list:
+                response_lengths.append(sample.response_length.cpu())
+                eval_samples.append(sample.sequences)
+
+        eval_samples=torch.cat(eval_samples, dim=0)
+        eval_samples=self.strategy.all_gather(eval_samples)
+        decoded_sequences=self.tokenizer.batch_decode(eval_samples.cpu(), skip_special_tokens=False)
+        
+        avg_response_lengths=np.mean(response_lengths)
+        logs={"response_length": avg_response_lengths,}   
+        logs=self.strategy.all_reduce(logs)
+        
+        if self.strategy.is_rank_0():
+            # calc acc on rank_0
+            print("num sequence:", len(decoded_sequences))
+            acc, eval_output=self.calculate_acc(decoded_sequences)
+            os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json")), exist_ok=True)
+            with open(os.path.join(self.args.samples_save_path, "test", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
+                json.dump(eval_output, f, indent=4)
+            for source in acc: logs[f"acc_{source}"]=acc[source]
+        
+            step_bar.set_postfix(logs)
+        
+            if self._wandb is not None:
+                logs = {"eval/%s" % k: v for k, v in {**logs, "global_step": steps}.items()}
+                self._wandb.log(logs)
+            elif self._tensorboard is not None:
+                for k, v in logs.items():
+                    self._tensorboard.add_scalar(f"eval/{k}", v, steps)
+        
+
 
     def _save_checkpoint(self, args, tag, client_states):
         if not self.disable_ds_ckpt:

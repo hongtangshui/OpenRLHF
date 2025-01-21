@@ -194,7 +194,7 @@ if __name__ == "__main__":
     parser.add_argument("--actor_num_nodes", type=int, default=1, help="number of nodes for actor")
     parser.add_argument("--actor_num_gpus_per_node", type=int, default=8, help="number of gpus per node for actor")
     parser.add_argument("--critic_num_nodes", type=int, default=1, help="number of nodes for critic")
-    parser.add_argument("--critic_num_gpus_per_node", type=int, default=8, help="number of gpus per node for critic")
+    parser.add_argument("--critic_num_gpus_per_node", type=int, default=1, help="number of gpus per node for critic")
     parser.add_argument(
         "--colocate_critic_reward",
         action="store_true",
@@ -224,7 +224,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_hf_ckpt", action="store_true", default=False)
     parser.add_argument("--disable_ds_ckpt", action="store_true", default=False)
     parser.add_argument("--max_ckpt_num", type=int, default=3)
-    parser.add_argument("--max_ckpt_mem", type=int, default=1e8)
+    parser.add_argument("--max_ckpt_mem", type=int, default=1e12)
     parser.add_argument("--load_checkpoint", action="store_true", default=False)
 
     # DeepSpeed
@@ -255,6 +255,7 @@ if __name__ == "__main__":
 
     # PPO
     parser.add_argument("--save_path", type=str, default="./ckpt")
+    parser.add_argument("--samples_save_path", type=str, default='./data')
     parser.add_argument("--num_episodes", type=int, default=1)
     parser.add_argument("--rollout_batch_size", type=int, default=1024)
     parser.add_argument("--micro_rollout_batch_size", type=int, default=8)
@@ -274,7 +275,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_batch_size", type=int, default=128, help="Global training batch size")
     parser.add_argument("--normalize_reward", action="store_true", default=False, help="Enable Reward Normazation")
     parser.add_argument("--top_p", type=float, default=1.0)
-    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=0.4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--freezing_actor_steps", type=int, default=-1, help="Used for critic initialization")
     parser.add_argument(

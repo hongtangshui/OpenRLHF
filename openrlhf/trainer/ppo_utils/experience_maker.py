@@ -482,7 +482,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         return experiences
 
     @torch.no_grad()
-    def generate_samples(self, all_prompts: List[str], **generate_kwargs) -> List[Samples]:
+    def generate_samples(self, all_prompts: List[str],**generate_kwargs) -> List[Samples]:
         """
         Generate samples and return in batches.
 
@@ -630,7 +630,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         self.actor.train()  # reset model state
         return experience
 
-    def _generate_vllm(self, all_prompts: List[str], **kwargs) -> List[Samples]:
+    def _generate_vllm(self, all_prompts: List[str], evaluation=False, **kwargs) -> List[Samples]:
         from vllm import SamplingParams
 
         # round-robin load balance
@@ -645,6 +645,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
 
         args = self.strategy.args
 
+        if evaluation: kwargs['temperature']=0.7
         sampling_params = SamplingParams(
             temperature=kwargs.get("temperature", 1.0),
             top_p=kwargs.get("top_p", 1.0),
@@ -652,11 +653,16 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             max_tokens=kwargs.get("max_new_tokens", 1024),
             min_tokens=kwargs.get("min_new_tokens", 1),
             skip_special_tokens=kwargs.get("skip_special_tokens", False),
+            # stop=["<|endoftext|>", "<|end", "text|>", "endoftext", "<|im_end|>"],
+            # stop_token_ids=[151643],
             include_stop_str_in_output=True,
         )
 
         # Expand prompt list based on the number of samples per prompt
-        all_prompts = sum([[prompt] * args.n_samples_per_prompt for prompt in all_prompts], [])
+        if not evaluation:
+            all_prompts = sum([[prompt] * args.n_samples_per_prompt for prompt in all_prompts], [])
+        else:
+            all_prompts = sum([[prompt] * 1 for prompt in all_prompts], [])
         all_prompt_token_ids = self.tokenize_fn(all_prompts, self.prompt_max_len, padding=False)["input_ids"]
 
         # Distribute requests to engines and collect responses to outputs
@@ -672,17 +678,21 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         # Retrieve and combine results from all outputs
         all_outputs = sum(ray.get(all_output_refs), [])
 
+        
         samples_list = []
         for i in range(0, len(all_outputs), args.micro_rollout_batch_size):
             outputs = all_outputs[i : i + self.strategy.args.micro_rollout_batch_size]
-            if not self.packing_samples:
+            if not self.packing_samples or evaluation:
                 # NOTE: concat all outputs to following format:
                 #
                 # | [PAD] [PAD] token token token | token token [EOS] [PAD] |
                 # | token token token token token | token token [EOS] [PAD] |
                 # | [PAD] [PAD] [PAD] token token | token token token [EOS] |
                 # |<---------- prompt ----------->|<-------- answer ------->|
-                max_input_len, max_output_len = 0, 0
+                if evaluation:
+                    max_input_len, max_output_len = args.prompt_max_len+128, args.prompt_max_len+args.generate_max_len
+                else:
+                    max_input_len, max_output_len = 0, 0
                 for output in outputs:
                     max_input_len = max(max_input_len, len(output.prompt_token_ids))
                     max_output_len = max(max_output_len, len(output.outputs[0].token_ids))
