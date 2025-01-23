@@ -1,5 +1,20 @@
 #!/bin/bash
-# wandb_run_name rl.grpo.0122.0317_qwen.7b.v1_am.36k_rbs256.n4.t0.7es1.kl0.000_bs128.ep1.lr5e-7
+
+# Training Hyperparameters
+ROLLOUT_BS=256
+N_SAMPLES_PER_PROMPT=4
+TEMPERATURE=0.7
+NUM_EPISODES=1
+EPS_CLIP=2.0
+VALUE_CLIP=0.2
+LAMBDA=0.95
+L2=0.1
+WARMUP=10
+KL_COEF=0.000
+BS=128
+EP=5
+LR=2e-7
+EVAL_STEPS=1
 
 # Environment Setup
 . /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/env/openrlhf/bin/activate
@@ -18,24 +33,15 @@ DATA_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfe
 # Model Paths
 POLICY_MODEL_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/model/qwen2.5-7b-instruct/policy.7b.v1
 
-# Training Hyperparameters
-ROLLOUT_BS=256
-N_SAMPLES_PER_PROMPT=4
-TEMPERATURE=0.7
-NUM_EPISODES=1
-KL_COEF=0.000
-BS=128
-EP=5
-LR=5e-7
-EVAL_STEPS=1
-LR_WARMUP_RATIO=$(python3 -c "print('{:.6f}'.format(10 / (36000.0 * ${N_SAMPLES_PER_PROMPT} / ${BS})))")
+# Calculate warmup ratio
+LR_WARMUP_RATIO=$(python3 -c "print('{:.6f}'.format(${WARMUP} / (36000.0 * ${N_SAMPLES_PER_PROMPT} / ${BS})))")
 
 # Trial Configuration
 TIMESTAMP=$(TZ='UTC-8' date "+%m%d.%H%M")
-TRIAL_NAME="rl.grpo.${TIMESTAMP}_qwen.7b.v1_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE}es${NUM_EPISODES}.kl${KL_COEF}_bs${BS}.ep${EP}.lr${LR}"
+TRIAL_NAME="rl.grpo_qwen.7b.v1_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE//.}_escp${EPS_CLIP}.vacp${VALUE_CLIP}.lam${LAMBDA}.l${L2}.wa${WARMUP}.kl${KL_COEF//.}\_bs${BS}.ep${EP}.lr${LR}"
 
 # Output Paths
-SAVE_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/model/qwen2.5-7b-instruct/$TRIAL_NAME
+SAVE_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/model/openrlhf/$TRIAL_NAME
 SAMPLES_SAVE_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/data/output/rl/$TRIAL_NAME
 
 # Ray Configuration
@@ -99,11 +105,11 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --advantage_estimator rloo \
     --actor_learning_rate $LR \
     --init_kl_coef $KL_COEF \
-    --eps_clip 2.0 \
-    --value_clip 0.2 \
-    --l2 0.1 \
+    --eps_clip $EPS_CLIP \
+    --value_clip $VALUE_CLIP \
+    --l2 $L2 \
     --lr_warmup_ratio $LR_WARMUP_RATIO \
-    --lambd 0.95 \
+    --lambd $LAMBDA \
     --gamma 1.0 \
     --zero_stage 3 \
     --bf16 \
