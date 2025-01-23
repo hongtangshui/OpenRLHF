@@ -1,5 +1,5 @@
 #!/bin/bash
-# wandb_run_name rl.grpo.0122.0317_qwen.7b.v1_am.36k_rbs256.n4.t0.7es1.kl0.000_bs128.ep1.lr5e-7
+# wandb_run_name rl.grpo.0122.1449_qwen.7b.v1_am.36k_rbs256.n4.t0.7es1.kl0.000_bs128.ep1.lr1e-7
 
 # Environment Setup
 . /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/env/openrlhf/bin/activate
@@ -26,7 +26,7 @@ NUM_EPISODES=1
 KL_COEF=0.000
 BS=128
 EP=1
-LR=5e-7
+LR=2e-7
 EVAL_STEPS=1
 LR_WARMUP_RATIO=$(python3 -c "print('{:.6f}'.format(10 / (36000.0 * ${N_SAMPLES_PER_PROMPT} / ${BS})))")
 
@@ -61,7 +61,7 @@ else
     ray start --address="$MASTER_ADDR:$RAY_MASTER_PORT" --num-gpus 8 --block
 fi
 
-sleep 10s
+sleep 30s
 
 # Start Training
 if [ "$PET_NODE_RANK" -eq 0 ]; then

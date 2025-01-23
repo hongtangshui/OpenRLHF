@@ -3,7 +3,7 @@
 # 14b, longcot
 
 cd /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/OpenRLHF
-git checkout ppo-local-0114
+git checkout ppo-local-0122
 . /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/env/openrlhf/bin/activate
 export NCCL_CUMEM_ENABLE=0
 export WANDB_MODE=disable
@@ -56,10 +56,10 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --runtime-env-json='{"working_dir": "/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/OpenRLHF"}' \
     -- python3 -m openrlhf.cli.train_ppo_ray \
     --ref_num_nodes 1 \
-    --ref_num_gpus_per_node 4 \
+    --ref_num_gpus_per_node 8 \
     --actor_num_nodes 1 \
-    --actor_num_gpus_per_node 4 \
-    --vllm_num_engines 4 \
+    --actor_num_gpus_per_node 8 \
+    --vllm_num_engines 8 \
     --vllm_tensor_parallel_size 2 \
     --eval_steps $EVAL_STEPS \
     --save_steps 1 \

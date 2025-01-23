@@ -1,5 +1,5 @@
 #!/bin/bash
-# wandb_run_name rl.grpo.0122.0317_qwen.7b.v1_am.36k_rbs256.n4.t0.7es1.kl0.000_bs128.ep1.lr5e-7
+# wandb_run_name rl.grpo.0122.0334_qwen.7b.v1_am.36k_rbs256.n4.t0.7es1.kl0.000.clip0.5_bs128.ep1.lr5e-7
 
 # Environment Setup
 . /inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/env/openrlhf/bin/activate
@@ -32,7 +32,7 @@ LR_WARMUP_RATIO=$(python3 -c "print('{:.6f}'.format(10 / (36000.0 * ${N_SAMPLES_
 
 # Trial Configuration
 TIMESTAMP=$(TZ='UTC-8' date "+%m%d.%H%M")
-TRIAL_NAME="rl.grpo.${TIMESTAMP}_qwen.7b.v1_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE}es${NUM_EPISODES}.kl${KL_COEF}_bs${BS}.ep${EP}.lr${LR}"
+TRIAL_NAME="rl.grpo.${TIMESTAMP}_qwen.7b.v1_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE}es${NUM_EPISODES}.kl${KL_COEF}.clip0.5_bs${BS}.ep${EP}.lr${LR}"
 
 # Output Paths
 SAVE_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/model/qwen2.5-7b-instruct/$TRIAL_NAME
@@ -72,7 +72,7 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --ref_num_gpus_per_node 8 \
     --actor_num_nodes 1 \
     --actor_num_gpus_per_node 8 \
-    --vllm_num_engines 8 \
+    --vllm_num_engines 4 \
     --vllm_tensor_parallel_size 2 \
     --pretrain $POLICY_MODEL_PATH \
     --save_path $SAVE_PATH \
@@ -99,7 +99,7 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --advantage_estimator rloo \
     --actor_learning_rate $LR \
     --init_kl_coef $KL_COEF \
-    --eps_clip 2.0 \
+    --eps_clip 0.5 \
     --value_clip 0.2 \
     --l2 0.1 \
     --lr_warmup_ratio $LR_WARMUP_RATIO \
