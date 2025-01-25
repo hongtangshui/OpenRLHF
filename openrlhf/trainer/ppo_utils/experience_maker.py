@@ -648,7 +648,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         if evaluation: kwargs['temperature']=0.7
         sampling_params = SamplingParams(
             temperature=kwargs.get("temperature", 1.0),
-            top_p=kwargs.get("top_p", 1.0),
+            top_p=kwargs.get("top_p", 0.95),
             top_k=kwargs.get("top_k", -1),
             max_tokens=kwargs.get("max_new_tokens", 1024),
             min_tokens=kwargs.get("min_new_tokens", 1),
