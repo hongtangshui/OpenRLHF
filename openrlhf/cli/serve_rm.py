@@ -12,7 +12,8 @@ from openrlhf.models import get_llm_for_sequence_regression
 from openrlhf.utils import get_tokenizer
 from openrlhf.utils.logging_utils import init_logger
 from openrlhf.utils.check.qwen_equal import math_equal
-
+from multiprocessing import Pool
+from transformers import AutoTokenizer
 logger = init_logger(__name__)
 
 
@@ -27,8 +28,6 @@ def strip_sequence(text, pad_token, eos_token):
     text = re.sub(pattern, "", text)
     return text
 
-
-                
                 
 class RewardModelProxy:
     def __init__(self, args):
@@ -90,6 +89,7 @@ class RewardModelProxy:
 
 class RuleBasedRMProxy:
     def __init__(self, args):
+        self.args=args
         self.prompt2answer={}
         
         dataset = load_from_disk(args.data_path)
@@ -101,28 +101,56 @@ class RuleBasedRMProxy:
         for line in validation_list:
             self.prompt2answer[line['context'].strip()]=line['answer']
             
-    def get_reward(self, quires):
+        self.tokenizer=AutoTokenizer.from_pretrained(args.tokenizer_path)
+            
+    def correctness_score(self, qa_pair):
+        prompt, response, _=qa_pair
+        matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", response)
+        if len(matches)==0:
+            return 0.0
+        else:
+            pred=matches[-1][:-1]
+        if prompt not in self.prompt2answer: 
+            return 0.0
+        if self.prompt2answer[prompt].strip()==pred.strip():
+            return 1.0
+        else:
+            return 0.1
+        
+    
+    def split_and_tokenize(self, query):
+        splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
+        prompt, response=splitted[0], splitted[1]
+        encoded_response=self.tokenizer.encode(response)
+        return (prompt.strip(), response.strip(), encoded_response)
+
+    def score(self, qa_pair):
+        # qa_pair=(prompt, response, encoded_response)
+        prompt, response, encoded_response=qa_pair
+        # too long penalty
+        if f"boxed" not in response and len(encoded_response)>self.args.max_gen_len-100: 
+            return -1 
+        return self.correctness_score(qa_pair)
+    
+    def get_reward(self, queries):
+        batch_size=len(queries)
         scores=[]
-        for query in quires:
-            prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
-            matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", query)
-            if len(matches)==0:
-                scores.append(0.0)
-                continue
-            else:
-                pred=matches[-1][:-1]
-            if prompt not in self.prompt2answer: 
-                scores.append(0.0)
-                continue
-            if self.prompt2answer[prompt].strip()==pred.strip():
-                scores.append(1.0)
-            else:
-                scores.append(0.1)
+        qa_pairs=[]
+        # split
+        with Pool(processes=batch_size) as p:
+            splitted=p.map(self.split_and_tokenize, queries)
+        
+        with Pool(processes=batch_size) as p:
+            scores=p.map(self.score, splitted)
+
         return scores
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="rule")
+    # RuleBasedRM Parameters
+    parser.add_argument("--tokenizer_path", type=str, default=None)
+    parser.add_argument("--max_gen_len", type=int)
     # Reward Model
     parser.add_argument("--data_path", type=str, default=None)    # for 
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
@@ -147,6 +175,11 @@ if __name__ == "__main__":
         reward_model = RewardModelProxy(args)
     else:
         reward_model = RuleBasedRMProxy(args)
+    
+    # test_case="<im_start>\nsystem\nnihao<|im_end|>\n<|im_start|>user\n1+1<|im_end|>\n<|im_start|>assistant\n1+1=\\boxed{2}<im_end>"
+    # reward=reward_model.get_reward([test_case for _ in range(4)])
+    # print(reward)
+    # exit()
     app = FastAPI()
 
     @app.post("/get_reward")
