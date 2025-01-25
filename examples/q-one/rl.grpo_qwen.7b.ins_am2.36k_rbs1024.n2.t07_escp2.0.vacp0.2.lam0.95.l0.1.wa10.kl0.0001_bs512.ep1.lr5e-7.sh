@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Training Hyperparameters
-ROLLOUT_BS=256
-N_SAMPLES_PER_PROMPT=4
+ROLLOUT_BS=1024
+N_SAMPLES_PER_PROMPT=2
 TEMPERATURE=0.7
 NUM_EPISODES=10000
 EPS_CLIP=2.0
@@ -11,7 +11,7 @@ LAMBDA=0.95
 L2=0.1
 WARMUP=10
 KL_COEF=0.0001
-BS=256
+BS=512
 EP=1
 LR=5e-7
 EVAL_STEPS=1
@@ -34,7 +34,7 @@ DATA_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfe
 POLICY_MODEL_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/model/qwen2.5-7b-instruct/policy.7b.v1
 
 # Calculate warmup ratio
-LR_WARMUP_RATIO=$(python3 -c "print('{:.6f}'.format(${WARMUP} / (36000.0 * ${N_SAMPLES_PER_PROMPT} / ${BS})))")
+LR_WARMUP_RATIO=$(python3 -c "print('{:.6f}'.format((${WARMUP} * ${BS}) / (36000.0 * ${N_SAMPLES_PER_PROMPT} * ${NUM_EPISODES})))")
 
 # Trial Configuration
 TIMESTAMP=$(TZ='UTC-8' date "+%m%d.%H%M")
@@ -89,9 +89,9 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --save_hf_ckpt \
     --max_ckpt_num 1000 \
     --max_ckpt_mem 2147483647 \
-    --micro_train_batch_size 1 \
+    --micro_train_batch_size 4 \
     --train_batch_size $BS \
-    --micro_rollout_batch_size 2 \
+    --micro_rollout_batch_size 8 \
     --rollout_batch_size $ROLLOUT_BS \
     --n_samples_per_prompt $N_SAMPLES_PER_PROMPT \
     --max_epochs $EP \
@@ -99,7 +99,7 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --eval_steps $EVAL_STEPS \
     --save_steps 1 \
     --prompt_max_len 1024 \
-    --generate_max_len 4096 \
+    --generate_max_len 3072 \
     --prompt_data $DATA_PATH \
     --input_key context_messages \
     --samples_save_path $SAMPLES_SAVE_PATH \
