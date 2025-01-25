@@ -319,6 +319,7 @@ if __name__ == "__main__":
 
     # Custom dataset
     parser.add_argument("--prompt_data", type=str, default=None, help="HF dataset name or path")
+    parser.add_argument("--test_path", type=str, default=None)
     parser.add_argument(
         "--prompt_data_probs",
         type=str,

@@ -99,7 +99,7 @@ class CriticModelRayActor(BasePPORole):
         )
 
         # configure scheduler
-        if lr_warmup_steps:
+        if args.lr_warmup_steps:
             num_warmup_steps=args.lr_warmup_steps
         else:
             num_warmup_steps=math.ceil(max_steps * args.lr_warmup_ratio)

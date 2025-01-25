@@ -187,7 +187,7 @@ x
     def get_prompt2answer(self):
         self.prompt2answer={}
         self.prompt2source={}
-        with open("/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/data/original_data/test.json", 'r', encoding='utf-8') as f: 
+        with open(self.args.test_path, 'r', encoding='utf-8') as f: 
             data=json.load(f)
         self.sources=[]
         for line in data:
