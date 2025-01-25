@@ -59,7 +59,7 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --ref_num_gpus_per_node 8 \
     --actor_num_nodes 1 \
     --actor_num_gpus_per_node 8 \
-    --vllm_num_engines 8 \
+    --vllm_num_engines 4 \
     --vllm_tensor_parallel_size 2 \
     --eval_steps $EVAL_STEPS \
     --save_steps 1 \
@@ -67,9 +67,9 @@ RAY_ADDRESS="http://127.0.0.1:$RAY_DASHBOARD_PORT" ray job submit --address="htt
     --remote_rm_url http://$MASTER_ADDR:5000/get_reward \
     --save_path $SAVE_PATH \
     --ckpt_path $SAVE_PATH \
-    --micro_train_batch_size 1 \
+    --micro_train_batch_size 2 \
     --train_batch_size $BS \
-    --micro_rollout_batch_size 1 \
+    --micro_rollout_batch_size 2 \
     --rollout_batch_size $ROLLOUT_BS \
     --n_samples_per_prompt $N_SAMPLES_PER_PROMPT \
     --max_epochs $EP \
