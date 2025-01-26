@@ -7,6 +7,7 @@ import torch
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from math_verify import parse, verify
 
 from openrlhf.models import get_llm_for_sequence_regression
 from openrlhf.utils import get_tokenizer
@@ -148,6 +149,77 @@ class RewardModelProxy:
 #         print("scores:", scores)
 #         return scores
 
+def math_equal(gold, answer):
+    gold=parse(gold)
+    answer=parse(answer)
+    return verify(gold, answer)
+
+
+# class RuleBasedRMProxy:
+#     def __init__(self, args):
+#         self.args=args
+#         self.prompt2answer={}
+        
+#         dataset = load_from_disk(args.data_path)
+#         train_list = list(dataset["train"])
+#         validation_list = list(dataset["test"])
+        
+#         for line in train_list:
+#             self.prompt2answer[line['context'].strip()]=line['answer']
+#         for line in validation_list:
+#             self.prompt2answer[line['context'].strip()]=line['answer']
+            
+#         self.tokenizer=AutoTokenizer.from_pretrained(args.tokenizer_path)
+            
+#     def correctness_score(self, qa_pair):
+#         prompt, response=qa_pair
+#         matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", response)
+#         if len(matches)==0:
+#             return -1
+#         else:
+#             pred=matches[-1][:-1]
+#         if prompt not in self.prompt2answer: 
+#             return -1
+#         if math_equal(self.prompt2answer[prompt], pred):
+#             return 1
+#         else:
+#             return -0.5
+        
+    
+#     def split_and_tokenize(self, query):
+#         splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
+#         prompt, response=splitted[0], splitted[1]
+#         encoded_response=self.tokenizer.encode(response)
+#         print("encoded_response:", encoded_response)
+#         return (prompt.strip(), response.strip(), encoded_response)
+
+#     def score(self, qa_pair):
+#         # qa_pair=(prompt, response, encoded_response)
+#         prompt, response, encoded_response=qa_pair
+#         # too long penalty
+#         if f"boxed" not in response and len(encoded_response)>self.args.max_gen_len-100: 
+#             return -1 
+#         return self.correctness_score(qa_pair)
+    
+#     def get_reward(self, queries):
+#         batch_size=len(queries)
+#         scores=[]
+#         qa_pairs=[]
+#         responses=[]
+#         for query in queries:
+#             splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
+#             prompt, response=splitted[0], splitted[1]
+#             qa_pairs.append((prompt, response))    
+#             responses.append(response)
+#         lengths=[len(ids) for ids in self.tokenizer.batch_encode_plus(responses, padding=False, truncation=False)["input_ids"]]
+#         for qa_pair, length in zip(qa_pairs, lengths):
+#             prompt, response=qa_pair
+#             if f"boxed" not in response and length>self.args.max_gen_len-100: 
+#                 scores.append(-1) 
+#             else:
+#                 scores.append(self.correctness_score(qa_pair))
+#         return scores
+
 
 class RuleBasedRMProxy:
     def __init__(self, args):
@@ -163,37 +235,35 @@ class RuleBasedRMProxy:
         for line in validation_list:
             self.prompt2answer[line['context'].strip()]=line['answer']
             
-        self.tokenizer=AutoTokenizer.from_pretrained(args.tokenizer_path)
             
     def correctness_score(self, qa_pair):
         prompt, response=qa_pair
         matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", response)
         if len(matches)==0:
-            return 0.0
+            return -1
         else:
             pred=matches[-1][:-1]
         if prompt not in self.prompt2answer: 
-            return 0.0
-        if self.prompt2answer[prompt].strip()==pred.strip():
-            return 1.0
+            return -1
+        if math_equal(self.prompt2answer[prompt], pred):
+            return 1
         else:
-            return 0.1
-        
+            return -0.5
     
-    def split_and_tokenize(self, query):
-        splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
-        prompt, response=splitted[0], splitted[1]
-        encoded_response=self.tokenizer.encode(response)
-        print("encoded_response:", encoded_response)
-        return (prompt.strip(), response.strip(), encoded_response)
+    # def split_and_tokenize(self, query):
+    #     splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
+    #     prompt, response=splitted[0], splitted[1]
+    #     encoded_response=self.tokenizer.encode(response)
+    #     print("encoded_response:", encoded_response)
+    #     return (prompt.strip(), response.strip(), encoded_response)
 
-    def score(self, qa_pair):
-        # qa_pair=(prompt, response, encoded_response)
-        prompt, response, encoded_response=qa_pair
-        # too long penalty
-        if f"boxed" not in response and len(encoded_response)>self.args.max_gen_len-100: 
-            return -1 
-        return self.correctness_score(qa_pair)
+    # def score(self, qa_pair):
+    #     # qa_pair=(prompt, response, encoded_response)
+    #     prompt, response, encoded_response=qa_pair
+    #     # too long penalty
+    #     if f"boxed" not in response and len(encoded_response)>self.args.max_gen_len-100: 
+    #         return -1 
+    #     return self.correctness_score(qa_pair)
     
     def get_reward(self, queries):
         batch_size=len(queries)
@@ -204,16 +274,10 @@ class RuleBasedRMProxy:
             splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
             prompt, response=splitted[0], splitted[1]
             qa_pairs.append((prompt, response))    
-            responses.append(response)
-        lengths=[len(ids) for ids in self.tokenizer.batch_encode_plus(responses, padding=False, truncation=False)["input_ids"]]
-        for qa_pair, length in zip(qa_pairs, lengths):
+        for qa_pair in qa_pairs:
             prompt, response=qa_pair
-            if f"boxed" not in response and length>self.args.max_gen_len-100: 
-                scores.append(-1) 
-            else:
-                scores.append(self.correctness_score(qa_pair))
+            scores.append(float(self.correctness_score(qa_pair)))
         return scores
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
