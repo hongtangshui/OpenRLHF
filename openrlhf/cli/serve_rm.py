@@ -272,7 +272,7 @@ class RuleBasedRMProxy:
         responses=[]
         for query in queries:
             splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
-            prompt, response=splitted[0], splitted[1]
+            prompt, response=splitted[0].strip(), splitted[1].strip()
             qa_pairs.append((prompt, response))    
         for qa_pair in qa_pairs:
             prompt, response=qa_pair
