@@ -304,13 +304,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--advantage_estimator",
         type=str,
-        choices=["gae", "reinforce", "rloo"],
+        choices=["gae", "reinforce", "rloo", "group_norm", "group_norm_pos", "group_norm_token_efficiency"],
         default="gae",
         help="Choose advantage estimation method: gae, reinforce, rloo",
     )
+    # grpo
+    parser.add_argument("--group_method", type=str, default="normal", choices=['group_reward_incomplete_equal_to_neg', 'group_reward_with_learn_mask', 'normal'])
+    parser.add_argument("--use_length_reward_in_efficiency", action="store_true", default=False)
+    
 
     #  Models
     parser.add_argument("--pretrain", type=str, default=None, help="HF model name or path")
+    parser.add_argument("--template_type", type=str, default="qwen", choices=['qwen', 'deepseek'])
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
     parser.add_argument("--remote_rm_url", type=str, default=None, help="remote RM API (HTTP)")
     parser.add_argument("--critic_pretrain", type=str, default=None, help="HF model name or path")
