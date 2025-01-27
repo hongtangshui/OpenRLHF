@@ -94,6 +94,7 @@ class Experience:
     def __add__(self, other):
         if not isinstance(other, Experience):
             return NotImplemented
+
         info = {}
         for k in self.info.keys():
             info[k] = conditional_cat(self.info[k], other.info[k])
@@ -107,7 +108,8 @@ class Experience:
             attention_mask=conditional_cat(self.attention_mask, other.attention_mask),
             action_mask=conditional_cat(self.action_mask, other.action_mask),
             info=info,
-            kl=conditional_cat(self.kl, other.kl),)
+            kl=conditional_cat(self.kl, other.kl),
+        )
 
     def __radd__(self, other):
         if other == 0:
@@ -228,6 +230,13 @@ class NaiveExperienceMaker(ABC):
             experience = experience.to_device("cuda")
             reward = reward.to(device="cuda")
             num_actions = experience.info["num_actions"]
+            
+            if self.advantage_estimator == "group_norm":
+                assert self.args.n_samples_per_prompt > 1, "group_norm requires n_samples_per_prompt > 1"
+                reward = reward.reshape(-1, self.args.n_samples_per_prompt)
+                reward = (reward - reward.mean(1, keepdim=True)) / (reward.std(1, keepdim=True) + 1e-8)
+                reward = reward.reshape(-1)
+                
             reward = compute_reward(
                 reward,
                 self.kl_ctl.value,
@@ -385,6 +394,8 @@ class NaiveExperienceMaker(ABC):
             rewards = rewards.flatten().to(device="cpu").chunk(len(experiences))
             return experiences, rewards
         # default rewards
+        if self.advantage_estimator in ["group_norm"]:
+            return [sum(experiences)], [experience.info["reward"] for experience in [sum(experiences)]]
         return experiences, [experience.info["reward"] for experience in experiences]
 
     @torch.no_grad()
