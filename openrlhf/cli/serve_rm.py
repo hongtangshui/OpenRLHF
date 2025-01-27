@@ -150,10 +150,17 @@ class RewardModelProxy:
 #         return scores
 
 def math_equal(gold, answer):
-    gold=parse(gold)
-    answer=parse(answer)
-    return verify(gold, answer)
+    # gold=parse(gold)
+    # answer=parse(answer)
+    return gold.strip()==answer.strip()
 
+def math_equal2(gold, answer):
+    try:
+        gold=parse(gold)
+        answer=parse(answer)
+        return verify(gold, answer)
+    except:
+        return False
 
 # class RuleBasedRMProxy:
 #     def __init__(self, args):
@@ -245,7 +252,7 @@ class RuleBasedRMProxy:
             pred=matches[-1][:-1]
         if prompt not in self.prompt2answer: 
             return -1
-        if math_equal(self.prompt2answer[prompt], pred):
+        if math_equal2(self.prompt2answer[prompt], pred):
             return 1
         else:
             return -0.5
