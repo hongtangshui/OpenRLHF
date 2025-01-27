@@ -517,22 +517,33 @@ x
             tag = f"global_step{global_step}"
             self._save_checkpoint(args, tag, client_states)
 
+
+    def split_qa(self, query):
+        if self.args.template_type=="qwen":
+            prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
+            response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0]
+        elif self.args.template_type=="deepseek":
+            prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
+            prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
+            response = query.split("<｜Assistant｜>")[-1].strip()
+        return prompt, response
+
     def calculate_acc(self, decoded_sequences):
         acc={source: 0 for source in self.sources}
         cnt={source: 0 for source in self.sources}
         eval_output=[]
         for query in decoded_sequences:
             # TODO: bat split
-            prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
-            matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", query)
+            prompt, response=self.split_qa(query)
+            matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", response)
             pred = "" if len(matches) == 0 else matches[-1][:-1]
             answer=self.prompt2answer[prompt.strip()]
             source=self.prompt2source[prompt.strip()]
             result=math_equal(answer, pred)
             if result: acc[source]+=1
             cnt[source]+=1
-            eval_output.append({"prompt": prompt, "solution": query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0], "result": result, "source": source, "answer": answer})
-        
+            eval_output.append({"prompt": prompt, "solution": response, "result": result, "source": source, "answer": answer})
+
         for source in acc:
             if cnt[source]==0: acc[source]=0
             else: acc[source]=acc[source]/cnt[source]

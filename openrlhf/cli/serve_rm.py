@@ -278,14 +278,23 @@ class RuleBasedRMProxy:
     #         return -1 
     #     return self.correctness_score(qa_pair)
     
+    def split_qa(self, query):
+        if self.args.template_type=="qwen":
+            prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
+            response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0].strip()
+        elif self.args.template_type=="deepseek":
+            prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
+            prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
+            response = query.split("<｜Assistant｜>")[-1].strip()
+        return prompt, response
+    
     def get_reward(self, queries):
         batch_size=len(queries)
         scores=[]
         qa_pairs=[]
         responses=[]
         for query in queries:
-            splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
-            prompt, response=splitted[0].strip(), splitted[1].strip()
+            prompt, response=self.split_qa(query)
             qa_pairs.append((prompt, response))    
         for qa_pair in qa_pairs:
             prompt, response=qa_pair
@@ -295,10 +304,12 @@ class RuleBasedRMProxy:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="rule")
+    parser.add_argument("--samples_save_path", type=str, default=None)
     # RuleBasedRM Parameters
     parser.add_argument("--tokenizer_path", type=str, default=None)
     parser.add_argument("--max_gen_len", type=int)
     parser.add_argument("--equal_function", type=str, default="str")
+    parser.add_argument("--template_type", type=str, default="qwen", choices=["qwen", "deepseek"])
     # Reward Model
     parser.add_argument("--data_path", type=str, default=None)    # for 
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
@@ -334,7 +345,7 @@ if __name__ == "__main__":
     @app.post("/get_reward")
     async def get_reward(request: Request):
         client_host = request.client.host
-        logger.info(f"client_ip: {client_host}")
+        # logger.info(f"client_ip: {client_host}")
         data = await request.json()
         queries = data.get("query")
         rewards = reward_model.get_reward(queries)
