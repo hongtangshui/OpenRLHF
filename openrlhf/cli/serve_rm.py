@@ -149,11 +149,18 @@ class RewardModelProxy:
 #         print("scores:", scores)
 #         return scores
 
-def math_equal(gold, answer):
-    gold=parse(gold)
-    answer=parse(answer)
-    return verify(gold, answer)
+def math_equal1(gold, answer):
+    # gold=parse(gold)
+    # answer=parse(answer)
+    return gold.strip()==answer.strip()
 
+def math_equal2(gold, answer):
+    try:
+        gold=parse(gold)
+        answer=parse(answer)
+        return verify(gold, answer)
+    except:
+        return False
 
 # class RuleBasedRMProxy:
 #     def __init__(self, args):
@@ -245,10 +252,16 @@ class RuleBasedRMProxy:
             pred=matches[-1][:-1]
         if prompt not in self.prompt2answer: 
             return -1
-        if math_equal(self.prompt2answer[prompt], pred):
-            return 1
-        else:
-            return -0.5
+        if self.args.equal_function=="str":
+            if math_equal1(self.prompt2answer[prompt], pred):
+                return 1
+            else:
+                return -0.5
+        elif self.args.equal_function=="sympy":
+            if math_equal2(self.prompt2answer[prompt], pred):
+                return 1
+            else:
+                return -0.5
     
     # def split_and_tokenize(self, query):
     #     splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
@@ -285,6 +298,7 @@ if __name__ == "__main__":
     # RuleBasedRM Parameters
     parser.add_argument("--tokenizer_path", type=str, default=None)
     parser.add_argument("--max_gen_len", type=int)
+    parser.add_argument("--equal_function", type=str, default="str")
     # Reward Model
     parser.add_argument("--data_path", type=str, default=None)    # for 
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
