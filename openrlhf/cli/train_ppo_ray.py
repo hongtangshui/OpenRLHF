@@ -324,7 +324,7 @@ if __name__ == "__main__":
 
     # Custom dataset
     parser.add_argument("--prompt_data", type=str, default=None, help="HF dataset name or path")
-    parser.add_argument("--test_path", type=str, default=None)
+    parser.add_argument("--test_path", type=str, default="/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/data/original_data/test.json")
     parser.add_argument(
         "--prompt_data_probs",
         type=str,
