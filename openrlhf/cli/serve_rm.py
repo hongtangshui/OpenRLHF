@@ -16,7 +16,22 @@ from openrlhf.utils.check.qwen_equal import math_equal
 from multiprocessing import Pool
 from transformers import AutoTokenizer
 logger = init_logger(__name__)
+import signal
+from contextlib import contextmanager
 
+class TimeoutException(Exception):
+    pass
+
+@contextmanager
+def timeout(seconds):
+    def signal_handler(signum, frame):
+        raise TimeoutException("Timed out!")
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
 
 def strip_sequence(text, pad_token, eos_token):
     pad_token_escaped = re.escape(pad_token)
@@ -28,8 +43,6 @@ def strip_sequence(text, pad_token, eos_token):
     pattern = f"({eos_token_escaped}|{pad_token_escaped})+$"
     text = re.sub(pattern, "", text)
     return text
-
-
                 
                 
 class RewardModelProxy:
@@ -150,8 +163,6 @@ class RewardModelProxy:
 #         return scores
 
 def math_equal1(gold, answer):
-    # gold=parse(gold)
-    # answer=parse(answer)
     return gold.strip()==answer.strip()
 
 def math_equal2(gold, answer):
@@ -260,7 +271,6 @@ if __name__ == "__main__":
     # RuleBasedRM Parameters
     parser.add_argument("--tokenizer_path", type=str, default=None)
     parser.add_argument("--max_gen_len", type=int)
-    parser.add_argument("--equal_function", type=str, default="str")
     parser.add_argument("--template_type", type=str, default="qwen", choices=["qwen", "deepseek"])
     # Reward Model
     parser.add_argument("--data_path", type=str, default=None)    # for 
