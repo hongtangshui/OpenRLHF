@@ -636,6 +636,5 @@ x
             self.strategy.save_ckpt(
                 self.critic, os.path.join(args.ckpt_path, "_critic"), tag, args.max_ckpt_num, args.max_ckpt_mem
             )
-        if self.save_hf_ckpt:
-            save_path = os.path.join(args.ckpt_path, f"{tag}_hf")
-            self.strategy.save_model(self.actor, self.tokenizer, save_path)
+        save_path = os.path.join(args.ckpt_path, f"{tag}_hf")
+        self.strategy.save_model(self.actor, self.tokenizer, save_path)
