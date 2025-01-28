@@ -247,6 +247,7 @@ x
             for rand_prompts in self.prompts_dataloader:
                 train_samples=[]
                 train_samples_reward=[]
+                train_samples_length=[]
                 for i, experience in enumerate(
                     self.experience_maker.make_experience_list(rand_prompts, **self.generate_kwargs)
                 ):
@@ -255,7 +256,7 @@ x
                     sequences = torch.cat((sequences, padding), dim=1)
                     train_samples.append(sequences)
                     train_samples_reward.append(experience.info['reward'])
-                    
+                    train_samples_length.append(experience.info['response_length'])
                     if i == 0:
                         output = self.tokenizer.batch_decode(
                             experience.sequences[0].unsqueeze(0), skip_special_tokens=True
@@ -266,16 +267,16 @@ x
                 
                 train_samples=torch.cat(train_samples, dim=0)
                 train_samples_reward=torch.cat(train_samples_reward, dim=0)
+                train_samples_length=torch.cat(train_samples_length, dim=0)
                 train_samples=self.strategy.all_gather(train_samples)
                 train_samples_reward=self.strategy.all_gather(train_samples_reward)
+                train_samples_length=self.strategy.all_gather(train_samples_length)
                 decoded_train_samples=self.tokenizer.batch_decode(train_samples.cpu(), skip_special_tokens=False)
-                print(train_samples_reward.shape)
-                print(train_samples.shape)
                 if self.strategy.is_rank_0():
                     qa_pairs=[]
                     for idx, sample in enumerate(decoded_train_samples):
                         prompt, response=self.split_qa(sample)
-                        qa_pairs.append({"prompt": prompt, "response": response, "reward": train_samples_reward[idx].item()})
+                        qa_pairs.append({"prompt": prompt, "response": response, "reward": train_samples_reward[idx].item(), "response_length": train_samples_length[idx].item()})
                     os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "train", f"step_{steps}.json")), exist_ok=True)
                     with open(os.path.join(self.args.samples_save_path, "train", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
                         json.dump(qa_pairs, f, indent=4)
@@ -635,3 +636,6 @@ x
             self.strategy.save_ckpt(
                 self.critic, os.path.join(args.ckpt_path, "_critic"), tag, args.max_ckpt_num, args.max_ckpt_mem
             )
+        if self.save_hf_ckpt:
+            save_path = os.path.join(args.ckpt_path, f"{tag}_hf")
+            self.strategy.save_model(self.actor, self.tokenizer, save_path)
