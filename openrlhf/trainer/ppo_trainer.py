@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -97,6 +98,7 @@ x
         super().__init__()
         self.strategy = strategy
         self.args = strategy.args
+        self.pad_max_length=self.args.prompt_max_len+self.generate_max_len+128
         self.micro_rollout_batch_size = micro_rollout_batch_size
         self.max_epochs = max_epochs
         self.tokenizer = tokenizer
@@ -243,15 +245,34 @@ x
             )
 
             for rand_prompts in self.prompts_dataloader:
+                train_samples=[]
                 for i, experience in enumerate(
                     self.experience_maker.make_experience_list(rand_prompts, **self.generate_kwargs)
                 ):
+                    sequences = pad_sequence(experience.sequences, batch_first=True, padding_value=0)
+                    padding = torch.zeros(sequences.size(0), self.pad_max_length - sequences.size(1), dtype=sequences.dtype)
+                    sequences = torch.cat((sequences, padding), dim=1)
+                    train_samples.append(sequences)
+                    
                     if i == 0:
                         output = self.tokenizer.batch_decode(
                             experience.sequences[0].unsqueeze(0), skip_special_tokens=True
                         )
                         self.strategy.print(output)
                     self.replay_buffer.append(experience)
+
+                train_samples=torch.cat(train_samples, dim=0)
+                train_samples=self.strategy.all_gather(train_samples)
+                decoded_train_samples=self.tokenizer.batch_decode(train_samples.cpu(), skip_special_tokens=False)
+                if self.strategy.is_rank_0():
+                    qa_pairs=[]
+                    for sample in decoded_train_samples:
+                        prompt, response=self.split_qa(sample)
+                        qa_pairs.append({"prompt": prompt, "response": response})
+                    os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "train", f"step_{steps}.json")), exist_ok=True)
+                    with open(os.path.join(self.args.samples_save_path, "train", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
+                        json.dump(qa_pairs, f, indent=4)
+
 
                 torch.cuda.empty_cache()
                 self.replay_buffer.normalize("advantages", self.strategy)
@@ -525,8 +546,9 @@ x
         elif self.args.template_type=="deepseek":
             prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
             prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
-            response = query.split("<｜Assistant｜>")[-1].strip()
+            response = query.split("<｜Assistant｜>")[-1].strip().split("<\uff5cend\u2581of\u2581sentence\uff5c>")[0].strip()
         return prompt, response
+
 
     def calculate_acc(self, decoded_sequences):
         acc={source: 0 for source in self.sources}
