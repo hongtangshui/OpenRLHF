@@ -162,121 +162,52 @@ def math_equal2(gold, answer):
     except:
         return False
 
-# class RuleBasedRMProxy:
-#     def __init__(self, args):
-#         self.args=args
-#         self.prompt2answer={}
-        
-#         dataset = load_from_disk(args.data_path)
-#         train_list = list(dataset["train"])
-#         validation_list = list(dataset["test"])
-        
-#         for line in train_list:
-#             self.prompt2answer[line['context'].strip()]=line['answer']
-#         for line in validation_list:
-#             self.prompt2answer[line['context'].strip()]=line['answer']
-            
-#         self.tokenizer=AutoTokenizer.from_pretrained(args.tokenizer_path)
-            
-#     def correctness_score(self, qa_pair):
-#         prompt, response=qa_pair
-#         matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", response)
-#         if len(matches)==0:
-#             return -1
-#         else:
-#             pred=matches[-1][:-1]
-#         if prompt not in self.prompt2answer: 
-#             return -1
-#         if math_equal(self.prompt2answer[prompt], pred):
-#             return 1
-#         else:
-#             return -0.5
-        
-    
-#     def split_and_tokenize(self, query):
-#         splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
-#         prompt, response=splitted[0], splitted[1]
-#         encoded_response=self.tokenizer.encode(response)
-#         print("encoded_response:", encoded_response)
-#         return (prompt.strip(), response.strip(), encoded_response)
-
-#     def score(self, qa_pair):
-#         # qa_pair=(prompt, response, encoded_response)
-#         prompt, response, encoded_response=qa_pair
-#         # too long penalty
-#         if f"boxed" not in response and len(encoded_response)>self.args.max_gen_len-100: 
-#             return -1 
-#         return self.correctness_score(qa_pair)
-    
-#     def get_reward(self, queries):
-#         batch_size=len(queries)
-#         scores=[]
-#         qa_pairs=[]
-#         responses=[]
-#         for query in queries:
-#             splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
-#             prompt, response=splitted[0], splitted[1]
-#             qa_pairs.append((prompt, response))    
-#             responses.append(response)
-#         lengths=[len(ids) for ids in self.tokenizer.batch_encode_plus(responses, padding=False, truncation=False)["input_ids"]]
-#         for qa_pair, length in zip(qa_pairs, lengths):
-#             prompt, response=qa_pair
-#             if f"boxed" not in response and length>self.args.max_gen_len-100: 
-#                 scores.append(-1) 
-#             else:
-#                 scores.append(self.correctness_score(qa_pair))
-#         return scores
-
-
 class RuleBasedRMProxy:
     def __init__(self, args):
-        self.args=args
-        self.prompt2answer={}
+        self.args = args
+        self.prompt2answer = {}
         
         dataset = load_from_disk(args.data_path)
         train_list = list(dataset["train"])
         validation_list = list(dataset["test"])
         
         for line in train_list:
-            self.prompt2answer[line['context'].strip()]=line['answer']
+            self.prompt2answer[line['context'].strip()] = line['answer']
         for line in validation_list:
-            self.prompt2answer[line['context'].strip()]=line['answer']
-            
-            
-    def correctness_score(self, qa_pair):
-        prompt, response=qa_pair
-        matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", response)
-        if len(matches)==0:
-            return -1
-        else:
-            pred=matches[-1][:-1]
-        if prompt not in self.prompt2answer: 
-            return -1
-        if self.args.equal_function=="str":
-            if math_equal1(self.prompt2answer[prompt], pred):
-                return 1
-            else:
-                return -0.5
-        elif self.args.equal_function=="sympy":
-            if math_equal2(self.prompt2answer[prompt], pred):
-                return 1
-            else:
-                return -0.5
-    
-    # def split_and_tokenize(self, query):
-    #     splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
-    #     prompt, response=splitted[0], splitted[1]
-    #     encoded_response=self.tokenizer.encode(response)
-    #     print("encoded_response:", encoded_response)
-    #     return (prompt.strip(), response.strip(), encoded_response)
+            self.prompt2answer[line['context'].strip()] = line['answer']
+        
+        self.timeout_seconds=2
+        self.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+        
+        self.chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+        self.english_pattern = re.compile(r'[a-zA-Z]')
+        self.boxed_pattern = re.compile(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})")
+        self.valid_char_pattern = re.compile(r'[a-zA-Z0-9\s\.,!?"\'\(\)\{\}\[\]_\-+=<>/@#$%^&*\\|:;~`\u2200-\u22FF]')
+        self.repeat_pattern = re.compile(r'(.{5,}?)\1{4,}')
 
-    # def score(self, qa_pair):
-    #     # qa_pair=(prompt, response, encoded_response)
-    #     prompt, response, encoded_response=qa_pair
-    #     # too long penalty
-    #     if f"boxed" not in response and len(encoded_response)>self.args.max_gen_len-100: 
-    #         return -1 
-    #     return self.correctness_score(qa_pair)
+    def check_mixed_languages(self, text):
+        chinese_chars = len(self.chinese_pattern.findall(text))
+        english_chars = len(self.english_pattern.findall(text))
+        return chinese_chars >= 20 and english_chars >= 20
+    
+    def check_garbled_characters(self, text):
+        valid_chars = self.valid_char_pattern.sub('', text)
+        if not text: 
+            return False
+        invalid_ratio = len(valid_chars) / len(text)
+        return invalid_ratio > 0.3
+    
+    def has_repeated_patterns(self, text):
+        return bool(self.repeat_pattern.search(text))
+    
+    def correctness_score(self, prompt, response):
+        matches = self.boxed_pattern.findall(response)
+        if not matches:
+            return -1.0
+        pred = matches[-1][:-1]
+        if prompt not in self.prompt2answer:
+            return -1.0
+        return 1.0 if math_equal2(self.prompt2answer[prompt], pred) else -0.5
     
     def split_qa(self, query):
         if self.args.template_type=="qwen":
@@ -288,17 +219,38 @@ class RuleBasedRMProxy:
             response = query.split("<｜Assistant｜>")[-1].strip()
         return prompt, response
     
+    def split_and_score(self, query):
+        try:
+            with timeout(self.timeout_seconds):
+                if args.template_type=="qwen":
+                    prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
+                    response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1]
+                    if "<|im_end|>" not in response and "<|endoftext|>" not in response:
+                        return -1.0
+                    response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0].strip()
+                elif args.template_type=="deepseek":
+                    prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
+                    prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
+                    response = query.split("<｜Assistant｜>")[-1].strip()
+                # encoded_response = self.tokenizer.encode(response)
+                if "\\boxed" not in response or response.count("\\boxed")>=5: return -1.0
+                # if self.check_mixed_languages(response): return -1.0
+                if self.check_garbled_characters(response): return -1.0
+                if self.has_repeated_patterns(response): return -1.0
+                return self.correctness_score(prompt, response)
+                
+        except TimeoutException:
+            logger.warning("Processing timed out")
+            return -1.0
+        except Exception as e:
+            logger.error(f"Error processing query: {str(e)}")
+            return -1.0
+    
     def get_reward(self, queries):
-        batch_size=len(queries)
-        scores=[]
-        qa_pairs=[]
-        responses=[]
+        scores = []
         for query in queries:
-            prompt, response=self.split_qa(query)
-            qa_pairs.append((prompt, response))    
-        for qa_pair in qa_pairs:
-            prompt, response=qa_pair
-            scores.append(float(self.correctness_score(qa_pair)))
+            score = self.split_and_score(query)
+            scores.append(score)
         return scores
 
 if __name__ == "__main__":
