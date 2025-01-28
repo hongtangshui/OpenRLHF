@@ -40,8 +40,7 @@ POLICY_MODEL_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/l
 LR_WARMUP_RATIO=$(python3 -c "print('{:.6f}'.format((${WARMUP} * ${BS}) / (8000.0 * ${N_SAMPLES_PER_PROMPT} * ${NUM_EPISODES})))")
 
 # Trial Configuration
-TIMESTAMP=$(TZ='UTC-8' date "+%m%d.%H%M")
-TRIAL_NAME="rl.ppo_qwen.32b_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE//.}_escp${EPS_CLIP}.vacp${VALUE_CLIP}.lam${LAMBDA}.wa${WARMUP}.kl${KL_COEF//.}\_bs${BS}.ep${EP}.lr${LR}.clr${CLR}"
+TRIAL_NAME="rl.ppo_qwen.32b_${DATASET_NAME}_rbs${ROLLOUT_BS}.n${N_SAMPLES_PER_PROMPT}.t${TEMPERATURE//.}.len${MAX_GEN_LEN}_escp${EPS_CLIP}.vacp${VALUE_CLIP}.lam${LAMBDA}.wa${WARMUP}.kl${KL_COEF//.}\_bs${BS}.ep${EP}.lr${LR}.clr${CLR}"
 
 # Output Paths
 SAVE_PATH=/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/hyzou/wiles/model/openrlhf/$TRIAL_NAME
