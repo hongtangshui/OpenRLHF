@@ -98,7 +98,7 @@ x
         super().__init__()
         self.strategy = strategy
         self.args = strategy.args
-        self.pad_max_length=self.args.prompt_max_len+self.generate_max_len+128
+        self.pad_max_length=self.args.prompt_max_len+self.args.generate_max_len+128
         self.micro_rollout_batch_size = micro_rollout_batch_size
         self.max_epochs = max_epochs
         self.tokenizer = tokenizer
@@ -246,6 +246,7 @@ x
 
             for rand_prompts in self.prompts_dataloader:
                 train_samples=[]
+                train_samples_reward=[]
                 for i, experience in enumerate(
                     self.experience_maker.make_experience_list(rand_prompts, **self.generate_kwargs)
                 ):
@@ -253,6 +254,7 @@ x
                     padding = torch.zeros(sequences.size(0), self.pad_max_length - sequences.size(1), dtype=sequences.dtype)
                     sequences = torch.cat((sequences, padding), dim=1)
                     train_samples.append(sequences)
+                    train_samples_reward.append(experience.info['reward'])
                     
                     if i == 0:
                         output = self.tokenizer.batch_decode(
@@ -261,14 +263,19 @@ x
                         self.strategy.print(output)
                     self.replay_buffer.append(experience)
 
+                
                 train_samples=torch.cat(train_samples, dim=0)
+                train_samples_reward=torch.cat(train_samples_reward, dim=0)
                 train_samples=self.strategy.all_gather(train_samples)
+                train_samples_reward=self.strategy.all_gather(train_samples_reward)
                 decoded_train_samples=self.tokenizer.batch_decode(train_samples.cpu(), skip_special_tokens=False)
+                print(train_samples_reward.shape)
+                print(train_samples.shape)
                 if self.strategy.is_rank_0():
                     qa_pairs=[]
-                    for sample in decoded_train_samples:
+                    for idx, sample in enumerate(decoded_train_samples):
                         prompt, response=self.split_qa(sample)
-                        qa_pairs.append({"prompt": prompt, "response": response})
+                        qa_pairs.append({"prompt": prompt, "response": response, "reward": train_samples_reward[idx].item()})
                     os.makedirs(os.path.dirname(os.path.join(self.args.samples_save_path, "train", f"step_{steps}.json")), exist_ok=True)
                     with open(os.path.join(self.args.samples_save_path, "train", f"step_{steps}.json"), 'w', encoding='utf-8') as f: 
                         json.dump(qa_pairs, f, indent=4)

@@ -308,10 +308,6 @@ if __name__ == "__main__":
         default="gae",
         help="Choose advantage estimation method: gae, reinforce, rloo",
     )
-    # grpo
-    parser.add_argument("--group_method", type=str, default="normal", choices=['group_reward_incomplete_equal_to_neg', 'group_reward_with_learn_mask', 'normal'])
-    parser.add_argument("--use_length_reward_in_efficiency", action="store_true", default=False)
-    
 
     #  Models
     parser.add_argument("--pretrain", type=str, default=None, help="HF model name or path")
