@@ -104,6 +104,7 @@ x
         self.args = strategy.args
         self.save_hf_ckpt = save_hf_ckpt
         self.disable_ds_ckpt = disable_ds_ckpt
+        self.pad_max_length=self.args.prompt_max_len+self.args.generate_max_len+128
         self.micro_rollout_batch_size = micro_rollout_batch_size
         self.max_epochs = max_epochs
         self.tokenizer = tokenizer
@@ -559,8 +560,9 @@ x
         elif self.args.template_type=="deepseek":
             prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
             prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
-            response = query.split("<｜Assistant｜>")[-1].strip()
+            response = query.split("<｜Assistant｜>")[-1].strip().split("<\uff5cend\u2581of\u2581sentence\uff5c>")[0].strip()
         return prompt, response
+
 
     def calculate_acc(self, decoded_sequences):
         acc={source: 0 for source in self.sources}
