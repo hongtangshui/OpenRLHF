@@ -698,7 +698,6 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             skip_special_tokens=kwargs.get("skip_special_tokens", False),
             stop=["\nuser\n"],
             # stop_token_ids=[151643],
-            stop=["\nuser\n"],
             include_stop_str_in_output=True,
         )
 
