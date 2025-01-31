@@ -267,7 +267,6 @@ class RuleBasedRMProxy:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="rule")
-    parser.add_argument("--samples_save_path", type=str, default=None)
     # RuleBasedRM Parameters
     parser.add_argument("--tokenizer_path", type=str, default=None)
     parser.add_argument("--max_gen_len", type=int)
