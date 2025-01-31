@@ -33,6 +33,14 @@ def timeout(seconds):
     finally:
         signal.alarm(0)
 
+def math_equal2(gold, answer):
+    try:
+        gold=parse(gold)
+        answer=parse(answer)
+        return verify(gold, answer)
+    except:
+        return False
+    
 def strip_sequence(text, pad_token, eos_token):
     pad_token_escaped = re.escape(pad_token)
     eos_token_escaped = re.escape(eos_token)
@@ -43,7 +51,7 @@ def strip_sequence(text, pad_token, eos_token):
     pattern = f"({eos_token_escaped}|{pad_token_escaped})+$"
     text = re.sub(pattern, "", text)
     return text
-                
+
                 
 class RewardModelProxy:
     def __init__(self, args):
@@ -103,76 +111,6 @@ class RewardModelProxy:
         return {k: v.to(device) for k, v in batch.items()}
 
 
-# class RuleBasedRMProxy:
-#     def __init__(self, args):
-#         self.args=args
-#         self.prompt2answer={}
-        
-#         dataset = load_from_disk(args.data_path)
-#         train_list = list(dataset["train"])
-#         validation_list = list(dataset["test"])
-        
-#         for line in train_list:
-#             self.prompt2answer[line['context'].strip()]=line['answer']
-#         for line in validation_list:
-#             self.prompt2answer[line['context'].strip()]=line['answer']
-            
-#         self.tokenizer=AutoTokenizer.from_pretrained(args.tokenizer_path)
-            
-#     def correctness_score(self, qa_pair):
-#         prompt, response, _=qa_pair
-#         matches = re.findall(r"\\boxed\{((?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{(?:[^{}]|\\{|\\}|(?:\{[^{}]*\}))*\}))*\}))*\})", response)
-#         if len(matches)==0:
-#             return 0.0
-#         else:
-#             pred=matches[-1][:-1]
-#         if prompt not in self.prompt2answer: 
-#             return 0.0
-#         if self.prompt2answer[prompt].strip()==pred.strip():
-#             return 1.0
-#         else:
-#             return 0.1
-        
-    
-#     def split_and_tokenize(self, query):
-#         splitted=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")
-#         prompt, response=splitted[0], splitted[1]
-#         encoded_response=self.tokenizer.encode(response)
-#         print("encoded_response:", encoded_response)
-#         return (prompt.strip(), response.strip(), encoded_response)
-
-#     def score(self, qa_pair):
-#         # qa_pair=(prompt, response, encoded_response)
-#         prompt, response, encoded_response=qa_pair
-#         # too long penalty
-#         if f"boxed" not in response and len(encoded_response)>self.args.max_gen_len-100: 
-#             return -1 
-#         return self.correctness_score(qa_pair)
-    
-#     def get_reward(self, queries):
-#         batch_size=len(queries)
-#         scores=[]
-#         qa_pairs=[]
-#         # split
-#         with Pool(processes=batch_size) as p:
-#             splitted=p.map(self.split_and_tokenize, queries)
-#         print("rm splitted:", splitted)
-#         with Pool(processes=batch_size) as p:
-#             scores=p.map(self.score, splitted)
-#         print("scores:", scores)
-#         return scores
-
-def math_equal1(gold, answer):
-    return gold.strip()==answer.strip()
-
-def math_equal2(gold, answer):
-    try:
-        gold=parse(gold)
-        answer=parse(answer)
-        return verify(gold, answer)
-    except:
-        return False
-
 class RuleBasedRMProxy:
     def __init__(self, args):
         self.args = args
@@ -215,39 +153,39 @@ class RuleBasedRMProxy:
         matches = self.boxed_pattern.findall(response)
         if not matches:
             return -1.0
+        
         pred = matches[-1][:-1]
         if prompt not in self.prompt2answer:
             return -1.0
+        
         return 1.0 if math_equal2(self.prompt2answer[prompt], pred) else -0.5
-    
-    def split_qa(self, query):
-        if self.args.template_type=="qwen":
-            prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
-            response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0].strip()
-        elif self.args.template_type=="deepseek":
-            prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
-            prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
-            response = query.split("<｜Assistant｜>")[-1].strip()
-        return prompt, response
     
     def split_and_score(self, query):
         try:
             with timeout(self.timeout_seconds):
-                if args.template_type=="qwen":
-                    prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
-                    response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1]
-                    if "<|im_end|>" not in response and "<|endoftext|>" not in response:
-                        return -1.0
-                    response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0].strip()
-                elif args.template_type=="deepseek":
-                    prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
-                    prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
-                    response = query.split("<｜Assistant｜>")[-1].strip()
-                # encoded_response = self.tokenizer.encode(response)
-                if "\\boxed" not in response or response.count("\\boxed")>=5: return -1.0
-                # if self.check_mixed_languages(response): return -1.0
-                if self.check_garbled_characters(response): return -1.0
-                if self.has_repeated_patterns(response): return -1.0
+                prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
+                response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1]
+                if "<|im_end|>" not in response and "<|endoftext|>" not in response:
+                    return -1.0
+                response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0].strip()
+                
+                encoded_response = self.tokenizer.encode(response)
+                
+                # if len(encoded_response) > self.args.max_gen_len - 100:
+                #     return -1.0
+                    
+                if "\\boxed" not in response or response.count("\\boxed")>=5:
+                    return -1.0
+                
+                # if self.check_mixed_languages(response):
+                #     return -1.0
+                    
+                if self.check_garbled_characters(response):
+                    return -1.0
+                
+                if self.has_repeated_patterns(response):
+                    return -1.0
+                
                 return self.correctness_score(prompt, response)
                 
         except TimeoutException:
@@ -263,14 +201,13 @@ class RuleBasedRMProxy:
             score = self.split_and_score(query)
             scores.append(score)
         return scores
-
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="rule")
     # RuleBasedRM Parameters
     parser.add_argument("--tokenizer_path", type=str, default=None)
     parser.add_argument("--max_gen_len", type=int)
-    parser.add_argument("--template_type", type=str, default="qwen", choices=["qwen", "deepseek"])
     # Reward Model
     parser.add_argument("--data_path", type=str, default=None)    # for 
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
@@ -300,13 +237,12 @@ if __name__ == "__main__":
     # reward=reward_model.get_reward([test_case for _ in range(4)])
     # print(reward)
     # exit()
-    
     app = FastAPI()
 
     @app.post("/get_reward")
     async def get_reward(request: Request):
         client_host = request.client.host
-        # logger.info(f"client_ip: {client_host}")
+        logger.info(f"client_ip: {client_host}")
         data = await request.json()
         queries = data.get("query")
         rewards = reward_model.get_reward(queries)

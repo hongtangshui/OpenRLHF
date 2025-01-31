@@ -224,6 +224,8 @@ if __name__ == "__main__":
     parser.add_argument("--save_steps", type=int, default=-1)
     parser.add_argument("--logging_steps", type=int, default=1)
     parser.add_argument("--ckpt_path", type=str, default="./ckpt/checkpoints_ppo_ray")
+    parser.add_argument("--save_hf_ckpt", action="store_true", default=True)
+    parser.add_argument("--disable_ds_ckpt", action="store_true", default=False)
     parser.add_argument("--max_ckpt_num", type=int, default=3)
     parser.add_argument("--max_ckpt_mem", type=int, default=1e12)
     parser.add_argument("--load_checkpoint", action="store_true", default=False)
@@ -324,7 +326,7 @@ if __name__ == "__main__":
 
     # Custom dataset
     parser.add_argument("--prompt_data", type=str, default=None, help="HF dataset name or path")
-    parser.add_argument("--test_path", type=str, default=None)
+    parser.add_argument("--test_path", type=str, default="/inspire/hdd/ws-c6f77a66-a5f5-45dc-a4ce-1e856fe7a7b4/project/liupengfei-24025/xfli/o1/data/original_data/test.json")
     parser.add_argument(
         "--prompt_data_probs",
         type=str,
