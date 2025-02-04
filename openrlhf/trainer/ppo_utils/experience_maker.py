@@ -562,7 +562,6 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         base_action_log_probs_ref = self.initial_model.forward.remote(
             sequences_cpu, num_actions, attention_mask_cpu, packed_seq_lens=packed_seq_lens
         )
-
         # values
         if self.critic is not None:
             value_ref = self.critic.forward.remote(
@@ -601,9 +600,9 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             for rm in self.remote_rm_url:
                 r = remote_rm_fn_ray.remote(rm, queries=queries)
                 r_refs.append(r)
-
         # log probs
         action_log_probs = self.actor(sequences, num_actions, attention_mask, packed_seq_lens=packed_seq_lens)
+        print("action_log_probs.shape: ", action_log_probs.shape)
         actor_value_rm_time = time.time() - start
 
         # wait initial/critic/reward model done
@@ -617,7 +616,6 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             value = value.to(device)
         rewards = [r.to(device) for r in rewards]
         r = self.reward_fn(rewards) if len(rewards) > 0 else rewards[0]
-
         # avoid CUDA OOM when colocate models
         if self.strategy.args.colocate_critic_reward and not self.remote_rm_url:
             ray.get([self.reward_model[0].empty_cache.remote()])
@@ -631,7 +629,6 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             action_mask=action_mask,
             use_kl_estimator_k3=self.strategy.args.use_kl_estimator_k3,
         )
-
         if not self.packing_samples:
             kl_mean = masked_mean(kl, action_mask, dim=-1)
         else:
