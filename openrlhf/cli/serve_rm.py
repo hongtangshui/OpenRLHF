@@ -163,16 +163,16 @@ class RuleBasedRMProxy:
     def split_and_score(self, query):
         try:
             with timeout(self.timeout_seconds):
-                prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
-                response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1]
-                if "<|im_end|>" not in response and "<|endoftext|>" not in response:
-                    return -1.0
-                response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0].strip()
-                
-                encoded_response = self.tokenizer.encode(response)
-                
-                # if len(encoded_response) > self.args.max_gen_len - 100:
-                #     return -1.0
+                if args.template_type=="qwen":
+                    prompt=query.split("<|im_end|>\n<|im_start|>user\n")[-1].split("<|im_end|>\n<|im_start|>assistant\n")[0].strip()
+                    response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1]
+                    if "<|im_end|>" not in response and "<|endoftext|>" not in response:
+                        return -1.0
+                    response=query.split("<|im_end|>\n<|im_start|>assistant\n")[-1].split("<|im_end|>")[0].split("<|endoftext|>")[0].strip()
+                elif args.template_type=="deepseek":
+                    prompt = query.split("<｜User｜>")[-1].split("<｜Assistant｜>")[0].strip()
+                    prompt = prompt.replace("Please reason step by step, and put your final answer within \\boxed{}", "").strip()
+                    response = query.split("<｜Assistant｜>")[-1].strip()
                     
                 if "\\boxed" not in response or response.count("\\boxed")>=5:
                     return -1.0
@@ -208,6 +208,7 @@ if __name__ == "__main__":
     # RuleBasedRM Parameters
     parser.add_argument("--tokenizer_path", type=str, default=None)
     parser.add_argument("--max_gen_len", type=int)
+    parser.add_argument("--template_type", type=str, default="qwen", choices=["qwen", "deepseek"])
     # Reward Model
     parser.add_argument("--data_path", type=str, default=None)    # for 
     parser.add_argument("--reward_pretrain", type=str, default=None, help="HF model name or path")
